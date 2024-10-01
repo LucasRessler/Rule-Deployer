@@ -2,9 +2,6 @@ $FILE_PATH = "$HOME\OneDrive - Deutsche Telekom AG\Dokumente\Input-Data\Kopie vo
 $SHEETNAME_PORTGROUPS = "TSA-Portgroups"
 $SHEETNAME_SERVERGROUPS = "TSA-Servergroups"
 $SHEETNAME_RULES = "TSA-Rules"
-$MIN_OUTCOL_PORTGROUPS = 5
-$MIN_OUTCOL_SERVERGROUPS = 6
-$MIN_OUTCOL_RULES = 8
 
 $REGEX_GROUPNAME = "[A-Za-z0-9_-]+"
 $REGEX_SERVICEREQUEST = "[A-Z]+[0-9]+"
@@ -38,7 +35,7 @@ function ParseDataSheet {
         $dbg_name = $format[$i]["dbg_name"]
         $subparser = $format[$i]["subparser"]
         $regex = if (-not $format[$i]["regex"]) {
-            ".*"
+            ".*" # Match anything if no regex is provided
         } else {
             $format[$i]["regex"]
         }
@@ -53,19 +50,21 @@ function ParseDataSheet {
 
         if ($format[$i]["is_array"]) {
             $body[$field_name] = @()
-            foreach ($entry in $data_cells[$i].Split([Environment]::NewLine)) {
-                if (-not [regex]::IsMatch($entry.Trim(), "^$regex$")) {
-                    throw "Invalid $dbg_name in row $row, column ${col}: '" + $entry.Trim() + "'"
+            $entries = $data_cells[$i].Split([System.Environment]::NewLine) | ForEach-Object { $_.Trim() }
+
+            foreach ($entry in $entries) {
+                if (-not [regex]::IsMatch($entry, "^$regex$")) {
+                    throw "Invalid $dbg_name in row $row, column ${col}: '" + $entry + "'"
                 }
 
                 $body[$field_name] += if ($subparser) {
                     try {
-                        & $subparser $entry.Trim()
+                        & $subparser $entry
                     } catch {
                         throw "Invalid $dbg_name in row $row, column ${col} - " + $_.Exception.Message
                     }
                 } else {
-                    $entry.Trim()
+                    $entry
                 }
             }
         } else {
@@ -90,6 +89,10 @@ function ParseDataSheet {
 
 # Subparsers
 function ParseIP([string]$raw_input) {
+    # This function expects a prevalidated ipv4 address
+    # Either with or without CIDR
+    # u8.u8.u8.u8 | u8.u8.u8.u8/cidr
+
     $ip = @{}
 
     $split_input = $raw_input.Split("/")
@@ -102,6 +105,10 @@ function ParseIP([string]$raw_input) {
 }
 
 function ParsePort([string]$raw_input) {
+    # This function expects a prevalidated protocol:port pair
+    # Either with a single port address or a range
+    # protocol:port | protocol:start-end
+
     $port = @{}
 
     $split_input = $raw_input.Split(":")
@@ -109,20 +116,18 @@ function ParsePort([string]$raw_input) {
 
     $port_addresses = $split_input[1].Split("-")
     $port["start"] = $port_addresses[0].Trim()
-    if ($port_addresses[1]) {
-        $port["end"] = $port_addresses[1].Trim()
+    $port["end"] = if ($port_addresses[1]) {
+        $port_addresses[1].Trim()
+    } else {
+        $port_addresses[0].Trim()
     }
 
     return $port
 }
 
-# Sheet Parsers
-function ParseServergroupsData {
-    param (
-        [hashtable]$data
-    )
-
-    $format = @(
+# Sheet Formats
+function Get-ServergroupsFormat {
+    return @(
         @{
             dbg_name = "Group Name"
             field_name = "name"
@@ -152,16 +157,10 @@ function ParseServergroupsData {
             is_optional = $true
         }
     )
-
-    return ParseDataSheet -data $data -format $format 
 }
 
-function ParsePortgroupsData {
-    param (
-        [hashtable]$data
-    )
-
-    $format = @(
+function Get-PortgroupsFormat {
+    return @(
         @{
             dbg_name = "Group Name"
             field_name = "name"
@@ -186,16 +185,10 @@ function ParsePortgroupsData {
             is_optional = $true
         }
     )
-
-    return ParseDataSheet -data $data -format $format
 }
 
-function ParseRulesData {
-    param (
-        [hashtable]$data
-    )
-
-    $format = @(
+function Get-RulesFormat {
+    return @(
         @{
             dbg_name = "NSX-Index"
             field_name = "index"
@@ -236,15 +229,13 @@ function ParseRulesData {
             is_optional = $true
         }
     )
-
-    return ParseDataSheet -data $data -format $format
 }
 
 function Update-CreationStatus {
     param (
-        [System.__ComObject]$excel,
+        [__ComObject]$excel,
         [string]$sheet_name,
-        [int]$min_output_column,
+        [int]$output_column,
         [int]$row,
         [string]$value,
         [double]$color = 0
@@ -257,7 +248,6 @@ function Update-CreationStatus {
         throw "Sheet '$sheet_name' could not be opened! :("
     }
 
-    $output_column = [math]::max($min_output_column, $sheet.UsedRange.Columns.Count)
     $cell = $sheet.Cells.Item($row, $output_column)
     $cell.Value = $value
     $cell.Font.Color = $color
@@ -265,8 +255,8 @@ function Update-CreationStatus {
 
 function Get-ExcelData {
     param (
-        [System.__ComObject]$excel,
-        [int]$min_output_column,
+        [__ComObject]$excel,
+        [int]$output_column,
         [string]$sheet_name
     )
 
@@ -278,7 +268,6 @@ function Get-ExcelData {
     }
 
     $num_rows = $sheet.UsedRange.Rows.Count
-    $output_column = [math]::max($min_output_column, $sheet.UsedRange.Columns.Count)
     $data = @()
 
     for ($row = 1; $row -le $num_rows; $row++) {
@@ -302,15 +291,15 @@ function Get-ExcelData {
 
 function HandleDataSheet {
     param (
-        [System.__ComObject]$excel,
+        [__ComObject]$excel,
         [string]$sheet_name,
-        [int]$min_output_column,
-        [string]$parse_function
+        [hashtable[]]$format
     )
 
     Write-Output $DIVIDER
     Write-Output "Loading data for $sheet_name..."
-    $sheet_data = Get-ExcelData -excel $excel -sheet_name $sheet_name -min_output_column $min_output_column
+    $output_column = $format.Length + 1
+    $sheet_data = Get-ExcelData -excel $excel -sheet_name $sheet_name -output_column $output_column
     $num_total = $sheet_data.Length
     $num_successful = 0
     
@@ -318,11 +307,11 @@ function HandleDataSheet {
     # TODO: Optimally, this for loop would be executed concurrently
     foreach ($data in $sheet_data) {
         try {
-            $data_json = & $parse_function -data $data
+            $data_json = ParseDataSheet -data $data -format $format
         }
         catch {
             $Host.UI.WriteErrorLine("->> Parse error in $sheet_name : " + $_.Exception.Message)
-            Update-CreationStatus -excel $excel -sheet_name $sheet_name -min_output_column $min_output_column -row $data["row_index"] -value "Parse Error" -color $COLOR_PARSE_ERROR
+            Update-CreationStatus -excel $excel -sheet_name $sheet_name -output_column $output_column -row $data["row_index"] -value "Parse Error" -color $COLOR_PARSE_ERROR
             Continue
         }
 
@@ -331,7 +320,7 @@ function HandleDataSheet {
         # TODO: Perform API-call, fill out creation status accordingly 
         # ----> $result = Invoke-RestMethod [...]
 
-        Update-CreationStatus -excel $excel -sheet_name $sheet_name -min_output_column $min_output_column -row $data["row_index"] -value "Created Successfully" -color $COLOR_SUCCESS
+        Update-CreationStatus -excel $excel -sheet_name $sheet_name -output_column $output_column -row $data["row_index"] -value "Created Successfully" -color $COLOR_SUCCESS
         $num_successful += 1
     }
 
@@ -349,11 +338,7 @@ function Main {
         [string]$file_path = $FILE_PATH,
         [string]$sheetname_servergroups = $SHEETNAME_SERVERGROUPS,
         [string]$sheetname_portgroups = $SHEETNAME_PORTGROUPS,
-        [string]$sheetname_rules = $SHEETNAME_RULES,
-        [int]$min_outcol_servergroups = $MIN_OUTCOL_SERVERGROUPS,
-        [int]$min_outcol_portgroups = $MIN_OUTCOL_PORTGROUPS,
-        [int]$min_outcol_rules = $MIN_OUTCOL_RULES
-
+        [string]$sheetname_rules = $SHEETNAME_RULES
     )
 
     Write-Output "Opening Excel-Instance..."
@@ -369,9 +354,9 @@ function Main {
         exit 666
     }
 
-    HandleDataSheet -excel $excel -sheet_name $sheetname_servergroups -min_output_column $min_outcol_servergroups -parse_function ParseServergroupsData
-    HandleDataSheet -excel $excel -sheet_name $sheetname_portgroups -min_output_column $min_outcol_portgroups -parse_function ParsePortgroupsData
-    HandleDataSheet -excel $excel -sheet_name $sheetname_rules -min_output_column $min_outcol_rules -parse_function ParseRulesData
+    HandleDataSheet -excel $excel -sheet_name $sheetname_servergroups -format (Get-ServergroupsFormat)
+    HandleDataSheet -excel $excel -sheet_name $sheetname_portgroups -format (Get-PortgroupsFormat)
+    HandleDataSheet -excel $excel -sheet_name $sheetname_rules -format (Get-RulesFormat)
 
     Write-Output $DIVIDER
     Write-Output "Done!"
