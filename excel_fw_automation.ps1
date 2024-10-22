@@ -17,6 +17,10 @@ $SHEETNAME_PORTGROUPS = "TSA-Portgroups"
 $SHEETNAME_SERVERGROUPS = "TSA-Servergroups"
 $SHEETNAME_RULES = "TSA-Rules"
 
+# $USERNAME = 
+# $PASSWORD = 
+# $TENNANT = 
+
 $URL_VRA8 = "https://cus.val001c002vie1x.c002.vie1.fci.ts-ian.net"
 $URL_REFRESHTOKEN = "$URL_VRA8/csp/gateway/am/api/login?access_token"
 $URL_LOGIN = "$URL_VRA8/iaas/api/login"
