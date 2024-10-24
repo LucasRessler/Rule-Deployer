@@ -666,15 +666,13 @@ function HandleDataSheet {
             if ($status -eq [DeploymentStatus]::Successful) {
                 $num_successful++
                 $excel.UpdateCreationStatus($sheet_config, $row_index, "$action Successful", $config.color.success)
+            } elseif ($is_reattempt) {
+                $Host.UI.WriteErrorLine("->> Creation and attempted update of resource at row $row_index failed")
+                $excel.UpdateCreationStatus($sheet_config, $row_index, "Crate Failed", $config.color.dploy_error)
             } else {
-                if ($is_reattempt) {
-                    $Host.UI.WriteErrorLine("->> Creation and attempted update of resource at row $row_index failed")
-                    $excel.UpdateCreationStatus($sheet_config, $row_index, "Crate Failed", $config.color.dploy_error)
-                } else {
-                    $reattempt += @{
-                        data = $deployment.preconverted
-                        row_index = $deployment.row_index
-                    }
+                $reattempt += @{
+                    data = $deployment.preconverted
+                    row_index = $deployment.row_index
                 }
             }
         }
