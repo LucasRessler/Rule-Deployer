@@ -13,9 +13,10 @@
 ###########################################################################
 
 $DEFAULT_FILE_PATH = "https://telekom-my.sharepoint.de/personal/lucas_ressler_t-systems_com/Documents/Dokumente/Input-Data/Kopie von FW rules TSA-v1.xlsx"
-$SHEETNAME_PORTGROUPS = "TSA-Portgroups"
 $SHEETNAME_SERVERGROUPS = "TSA-Servergroups"
+$SHEETNAME_PORTGROUPS = "TSA-Portgroups"
 $SHEETNAME_RULES = "TSA-Rules"
+$TEST_PREFIX = "ArcaIgnis-Test---"
 
 # TODO: find a better way to get these...
 # $USERNAME =
@@ -65,7 +66,6 @@ class ExcelHandle {
     [__ComObject]$app
     [__ComObject]$workbook
     [Bool]$should_close
-    [Bool]$initially_visible
     
     ExcelHandle([String]$file_path) {
         try {
@@ -85,7 +85,6 @@ class ExcelHandle {
             $this.should_close = $true
             Write-Host "Created new Excel-Instance."
         }
-        $this.initially_visible = $this.app.Visible
         $this.app.Visible = $false
     }
 
@@ -93,7 +92,7 @@ class ExcelHandle {
         [String]$sheet_name = $sheet_config.sheet_name
         [Int]$output_column = $sheet_config.format.Length + 1
         try { $sheet = $this.workbook.Worksheets.Item($sheet_name) }
-        catch { throw "Sheet '$sheet_name' could not be opened! :(" }
+        catch { throw "Sheet '$sheet_name' could not be opened: $($_.Exception.Message)" }
 
         $num_rows = $sheet.UsedRange.Rows.Count
         [Hashtable[]]$data = @()
@@ -124,7 +123,7 @@ class ExcelHandle {
         [Int]$output_column = $sheet_config.format.Length + 1
         [String]$sheet_name = $sheet_config.sheet_name
         try { $sheet = $this.workbook.Worksheets.Item($sheet_name) }
-        catch { throw "Sheet '$sheet_name' could not be opened! :(" }
+        catch { throw "Sheet '$sheet_name' could not be opened: $($_.Exception.Message)" }
         $cell = $sheet.Cells.Item($row_index, $output_column)
         $cell.Value = $value
         $cell.Font.Color = $color
@@ -136,6 +135,14 @@ class ExcelHandle {
             $this.workbook.Close($true)
             $this.app.Quit()
         }
+        else { $this.app.Visible = $true }
+        [System.Runtime.InteropServices.Marshal]::ReleaseComObject($this.workbook)
+        [System.Runtime.InteropServices.Marshal]::ReleaseComObject($this.app)
+        $this.workbook = $null
+        $this.app = $null
+        $this.Finalize()
+        [System.GC]::Collect()
+        [System.GC]::WaitForPendingFinalizers()
     }
 }
 
@@ -163,7 +170,7 @@ class ApiHandle {
             $response = Invoke-RestMethod $config.url.refresh_token -Method Post -ContentType "application/json" -Body $body
             $refresh_token = $response.refresh_token
         } catch {
-            throw "Failed to obtain refresh token! - $($_.Exception.Message)"
+            throw "Failed to obtain refresh token: $($_.Exception.Message)"
         }
 
         # get access token
@@ -178,7 +185,7 @@ class ApiHandle {
                 Authorization = "Bearer $access_token"
             }
         } catch {
-            throw "Failed to obtain access token!"
+            throw "Failed to obtain access token: $($_.Exception.Message)"
         }
 
         # get project id
@@ -186,12 +193,13 @@ class ApiHandle {
             $url = "$($config.url.project_id)?`$filter=name eq '$tennant_name'" 
             $response = Invoke-RestMethod $url -Method Get -Headers $this.headers
         } catch {
-            throw "Failed to get project id!"
+            throw "Failed to get project id: $($_.Exception.Message)"
         }
+
         if ($response.content.Length -eq 1) {
             $this.project_id = $response.content[0].id
         } else {
-            throw "Failed to get project id!"
+            throw "Excpected exactly 1 project with the given tennant name, found $($response.content.Length)!"
         }
     }
 
@@ -227,10 +235,12 @@ class ApiHandle {
     [DeploymentStatus] WaitForDeployment([String]$deployment_id) {
         $status = $null
         $complete = $false
+        $wait_time = 0
         while (-not $complete) {
+            Start-Sleep $wait_time
             $status = $this.CheckDeployment($deployment_id)
             $complete = $status -ne [DeploymentStatus]::InProgress
-            Start-Sleep 1
+            $wait_time++
         }
         return $status
     }
@@ -374,7 +384,7 @@ function ConvertServergroupsData {
         [String]$action,
         [Hashtable]$data
     )
-    $name = "ArcaIgnis-Test---$($data.name)"
+    $name = "$TEST_PREFIX$($data.name)"
     $body = @{
             action = $action
             name = $name
@@ -402,7 +412,7 @@ function ConvertPortgroupsData {
         [Hashtable]$data
     )
 
-    $name = "ArcaIgnis-Test---$($data.name)"
+    $name = "$TEST_PREFIX$($data.name)"
     $body =  @{
         action = $action 
         name = $name
@@ -444,6 +454,8 @@ function ConvertRulesData {
         [Hashtable]$api_config
     )
 
+    Write-Host ($data | ConvertTo-Json)
+    throw "NOT YET IMPLEMENTED"
     # TODO
 }
 
@@ -571,7 +583,7 @@ function Get-RulesConfig([Hashtable]$config) {
                 is_optional = $true
             }
         )
-        # converter = "ConvertRulesData"
+        converter = "ConvertRulesData"
         sheet_name = $SHEETNAME_RULES
         resource_name = "FW-Rule"
         catalog_id = $config.catalog.fw_rules
@@ -583,11 +595,9 @@ function Get-RulesConfig([Hashtable]$config) {
 function PrintDivider {
     Write-Host "------------------------"
 }
-
 function ShowPercentage ([Int]$i, [Int]$total) {
     Write-Host -NoNewline "...$([Math]::Floor($i * 100 / $total))%`r"
 }
-
 function Punct ([Int]$achieved, [Int]$total) {
     if ($total -eq 0) {
         return "."
@@ -626,6 +636,7 @@ function HandleDataSheet {
         [Int]$num_data = $input_data.Length
         [Hashtable[]]$deployed = @()
 
+        Write-Host "Deploying $num_data $action-$(if($num_data -eq 1) {"request"} else {"requests"})..."
         for ($i = 0; $i -lt $num_data; $i++) {
             ShowPercentage $i $num_data
             $row_index = $input_data[$i].row_index
@@ -657,6 +668,7 @@ function HandleDataSheet {
         [Int]$num_deployed = $input_data.Length
         [Int]$num_successful = 0
 
+        Write-Host "Waiting for status of $num_deployed $(if($num_deployed -eq 1) {"deployment"} else {"deployments"})..."
         for ($i = 0; $i -lt $num_deployed; $i++) {
             ShowPercentage $i $num_deployed
             $deployment = $input_data[$i]
@@ -667,7 +679,7 @@ function HandleDataSheet {
                 $num_successful++
                 $excel.UpdateCreationStatus($sheet_config, $row_index, "$action Successful", $config.color.success)
             } elseif ($is_reattempt) {
-                $Host.UI.WriteErrorLine("->> Creation and attempted update of resource at row $row_index failed")
+                $Host.UI.WriteErrorLine("->> Creation and attempted update of resource at row $row_index in $sheet_name failed")
                 $excel.UpdateCreationStatus($sheet_config, $row_index, "Crate Failed", $config.color.dploy_error)
             } else {
                 $reattempt += @{
@@ -716,14 +728,12 @@ function HandleDataSheet {
     if ($num_parsed -eq 0) { PrematurelyDone; return }
 
     # Deploy Creation Requests
-    Write-Host "Deploying $num_parsed creation $(if($num_parsed -eq 1) {"request"} else {"requests"})..."
     [Hashtable[]]$deployed_create = DeployRequests $parsed_data "Create"
     [Int]$num_deployed_create = $deployed_create.Length
     Write-Host "$num_deployed_create/$num_parsed deployed$(Punct $num_deployed_create $num_parsed)"
     if ($num_deployed_create -eq 0) { PrematurelyDone; return }
 
     # Wait For Create-Deployments
-    Write-Host "Waiting for status of $num_deployed_create $(if($num_deployed_create -eq 1) {"deployment"} else {"deployments"})..."
     [Hashtable]$await_result = AwaitDeployments $deployed_create
     [Int]$num_created = $await_result.num_successful
     [Hashtable[]]$to_update = $await_result.reattempt
@@ -732,15 +742,15 @@ function HandleDataSheet {
     if ($num_to_update -eq 0) { PrematurelyDone; return }
 
     # Deploy Update Requests
+    # TODO: Maybe updating should require explicit input
     Write-Host "The failed $(if ($num_to_update -eq 1) {"resource"} else {"resources"}) might already exist."
-    Write-Host "Attempting to update the $num_to_update remaining $(if ($num_to_update -eq 1) {"resource"} else {"resources"})..."
+    Write-Host "I'll attempt to update $(if ($num_to_update -eq 1) {"it"} else {"them"}) instead."
     [Hashtable[]]$deployed_update = DeployRequests $to_update "Update"
     [Int]$num_deployed_update = $deployed_update.Length
     Write-Host "$num_deployed_update/$num_to_update deployed$(Punct $num_deployed_update $num_to_update)"
     if ($num_deployed_update -eq 0) { PrematurelyDone; return }
 
     # Wait For Update-Deployments
-    Write-Host "Waiting for status of $num_deployed_update $(if($num_deployed_update -eq 1) {"deployment"} else {"deployments"})..."
     [Int]$num_updated = (AwaitDeployments $deployed_update $true).num_successful
     Write-Host "$num_updated/$num_deployed_update updated successfully$(Punct $num_updated $num_deployed_update)"
     Write-Host "Filled out creation status for $sheet_name."
@@ -756,35 +766,28 @@ function Main {
     )
 
     $config = Get-Config
-
     Write-Host "Initialising communication with API..."
     try { $api = [ApiHandle]::New($USERNAME, $PASSWORD, $TENNANT, $config) }
-    catch {
-        $Host.UI.WriteErrorLine("$($_.Exception.Message)")
-        exit 666
-    }
+    catch { $Host.UI.WriteErrorLine("$($_.Exception.Message)"); exit 666 }
 
     Write-Host "Opening Excel-Instance..."
     try { $excel = [ExcelHandle]::new($file_path) }
-    catch {
-        $Host.UI.WriteErrorLine("Failed to open '$file_path' :(")
-        exit 666
-    } 
+    catch { $Host.UI.WriteErrorLine("Failed to open '$file_path' :("); exit 666 }
 
     $sheet_configs = @(
-        (Get-ServergroupsConfig $config),
-        (Get-PortgroupsConfig $config),
-        (Get-RulesConfig $config)
+        Get-ServergroupsConfig $config
+        Get-PortgroupsConfig $config
+        Get-RulesConfig $config
     )
 
     foreach ($sheet_config in $sheet_configs) {
-        HandleDataSheet -excel_handle $excel -api_handle $api -sheet_config $sheet_config -config $config | Out-Null
+        try { HandleDataSheet -excel_handle $excel -api_handle $api -sheet_config $sheet_config -config $config | Out-Null }
+        catch { $Host.UI.WriteErrorLine($_.Exception.Message) }
     }
 
     PrintDivider
     Write-Host "Releasing Excel-Instance..."
     $excel.Release()
-
     Write-Host "Done!"
 }
 
