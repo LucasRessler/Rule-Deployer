@@ -130,6 +130,7 @@ class ExcelHandle {
     }
     
     [Void] Release() {
+        Write-Host "Releasing Excel-Instance..."
         $this.app.Visible = $this.initially_visible
         if ($this.should_close) {
             $this.workbook.Close($true)
@@ -379,11 +380,7 @@ function ParsePort([String]$raw_input) {
 
 
 # Converters
-function ConvertServergroupsData {
-    param(
-        [String]$action,
-        [Hashtable]$data
-    )
+function ConvertServergroupsData([Hashtable]$data, [String]$action) {
     $name = "$TEST_PREFIX$($data.name)"
     $body = @{
             action = $action
@@ -401,17 +398,12 @@ function ConvertServergroupsData {
         if ($addr.net) { $addresses += "/$($addr.net)" }
     }
     $body["ipAddress"] = $addresses
+    
     if ($data.comment) { $body["description"] = $data.comment }
-
     $body
 }
 
-function ConvertPortgroupsData {
-    param (
-        [String]$action,
-        [Hashtable]$data
-    )
-
+function ConvertPortgroupsData([Hashtable]$data, [String]$action) {
     $name = "$TEST_PREFIX$($data.name)"
     $body =  @{
         action = $action 
@@ -448,15 +440,33 @@ function ConvertPortgroupsData {
     $body
 }
 
-function ConvertRulesData {
-    param (
-        [Hashtable]$data,
-        [Hashtable]$api_config
-    )
+function ConvertRulesData ([Hashtable]$data, [String]$action) {
+    # TODO: Uhhhh Naming convention??
+    $name = "${TEST_PREFIX}TMPRULE$($data.index)"
+    $body = @{
+        action = $action
+        name = $name
+        # TODO: What this mean??
+        gateway = "T1 Payload"
+        firewallAction = "Allow"
+        # TODO: Allow multiple types?
+        sourceType = "Group"
+        destinationType = "Group"
+        serviceType = "Service"
+        sources = @()
+        destinations = @()
+        services = @()
+    }
+    if ($action -eq "Update") {
+        $body["elementToUpdate"] = $name
+    }
 
-    Write-Host ($data | ConvertTo-Json)
-    throw "NOT YET IMPLEMENTED"
-    # TODO
+    foreach ($source in $data.sources) { $body.sources += "$TEST_PREFIX$source (IPSET)" }
+    foreach ($destination in $data.destinations) { $body.destinations += "$TEST_PREFIX$destination (IPSET)" }
+    foreach ($service in $data.services) { $body.services += "$TEST_PREFIX$service" }
+    
+    if ($data.comment) { $body["comment"] = $data.comment }
+    $body
 }
 
 
@@ -474,8 +484,8 @@ function Get-ServergroupsConfig([Hashtable]$config) {
                 dbg_name = "IP-Address"
                 field_name = "addresses"
                 regex = $config.regex.ip_cidr
-                subparser = "ParseIP"
                 is_array = $true
+                subparser = "ParseIP"
             },
             @{
                 dbg_name = "Host Name"
@@ -495,10 +505,13 @@ function Get-ServergroupsConfig([Hashtable]$config) {
                 is_array = $true
             }
         )
-        converter = "ConvertServergroupsData"
         sheet_name = $SHEETNAME_SERVERGROUPS
         resource_name = "Security Group"
         catalog_id = $config.catalog.security_groups
+        converter = {
+            param ([hashtable]$data, [String]$action)
+            ConvertServergroupsData $data $action
+        }
     }
 }
 
@@ -531,10 +544,13 @@ function Get-PortgroupsConfig([Hashtable]$config) {
                 is_array = $true
             }
         )
-        converter = "ConvertPortgroupsData"
         sheet_name = $SHEETNAME_PORTGROUPS
         resource_name = "Service"
         catalog_id = $config.catalog.services
+        converter = {
+            param ([Hashtable]$data, [String]$action)
+            ConvertPortgroupsData $data $action 
+        }
     }
         
 }
@@ -546,28 +562,29 @@ function Get-RulesConfig([Hashtable]$config) {
                 dbg_name = "NSX-Index"
                 field_name = "index"
                 regex = "[0-9]+"
+                is_unique = $true
             },
             @{
                 dbg_name = "NSX-Source"
-                field_name = "source"
-                regex = $config.regex.nsx_endpoint
+                field_name = "sources"
+                regex = $config.regex.groupname
                 is_array = $true
             },
             @{
                 dbg_name = "NSX-Destination"
-                field_name = "destination"
-                regex = $config.regex.nsx_endpoint
+                field_name = "destinations"
+                regex = $config.regex.groupname
                 is_array = $true
             },
             @{
                 dbg_name = "NSX-Ports"
-                field_name = "ports"
+                field_name = "services"
                 regex = $config.regex.groupname
                 is_array = $true
             },
             @{
                 dbg_name = "NSX-Description"
-                field_name = "description"
+                field_name = "comment"
                 is_optional = $true
             },
             @{
@@ -583,10 +600,13 @@ function Get-RulesConfig([Hashtable]$config) {
                 is_optional = $true
             }
         )
-        converter = "ConvertRulesData"
         sheet_name = $SHEETNAME_RULES
         resource_name = "FW-Rule"
         catalog_id = $config.catalog.fw_rules
+        converter = {
+            param ([Hashtable]$data, [String]$action)
+            ConvertRulesData $data $action
+        }
     }
 }
 
@@ -596,7 +616,7 @@ function PrintDivider {
     Write-Host "------------------------"
 }
 function ShowPercentage ([Int]$i, [Int]$total) {
-    Write-Host -NoNewline "...$([Math]::Floor($i * 100 / $total))%`r"
+    Write-Host -NoNewline "...$([Math]::Floor(($i * 100 + 50) / $total))%`r"
 }
 function Punct ([Int]$achieved, [Int]$total) {
     if ($total -eq 0) {
@@ -644,7 +664,7 @@ function HandleDataSheet {
             $deployment_name = "$action $($sheet_config.resource_name) - $(Get-Date -UFormat %s -Millisecond 0) - LR Automation"
 
             try {
-                $inputs = & $sheet_config.converter -action $action -data $data
+                $inputs = & $sheet_config.converter -data $data -action $action
                 $deployed += @{
                     id = $api_handle.Deploy($deployment_name, $sheet_config.catalog_id, $inputs)
                     row_index = $row_index
@@ -756,40 +776,29 @@ function HandleDataSheet {
     Write-Host "Filled out creation status for $sheet_name."
 }
 
-function Main {
-    [CmdletBinding()]
-    param (
-        [String]$file_path,
-        [String]$sheetname_servergroups = $SHEETNAME_SERVERGROUPS,
-        [String]$sheetname_portgroups = $SHEETNAME_PORTGROUPS,
-        [String]$sheetname_rules = $SHEETNAME_RULES
-    )
-
+function Main([String]$file_path) {
     $config = Get-Config
     Write-Host "Initialising communication with API..."
     try { $api = [ApiHandle]::New($USERNAME, $PASSWORD, $TENNANT, $config) }
-    catch { $Host.UI.WriteErrorLine("$($_.Exception.Message)"); exit 666 }
+    catch { $Host.UI.WriteErrorLine($_.Exception.Message); exit 666 }
 
     Write-Host "Opening Excel-Instance..."
     try { $excel = [ExcelHandle]::new($file_path) }
-    catch { $Host.UI.WriteErrorLine("Failed to open '$file_path' :("); exit 666 }
+    catch { $Host.UI.WriteErrorLine($_.Exception.Message); exit 666 }
 
-    $sheet_configs = @(
+    foreach ($sheet_config in @(
         Get-ServergroupsConfig $config
         Get-PortgroupsConfig $config
         Get-RulesConfig $config
-    )
-
-    foreach ($sheet_config in $sheet_configs) {
+    )) {
         try { HandleDataSheet -excel_handle $excel -api_handle $api -sheet_config $sheet_config -config $config | Out-Null }
         catch { $Host.UI.WriteErrorLine($_.Exception.Message) }
     }
 
     PrintDivider
-    Write-Host "Releasing Excel-Instance..."
     $excel.Release()
     Write-Host "Done!"
 }
 
 $file_path = if($args[0]) {$args[0]} else {$DEFAULT_FILE_PATH}
-Main -file_path $file_path
+Main $file_path
