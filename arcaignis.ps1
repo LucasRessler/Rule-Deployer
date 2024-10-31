@@ -12,20 +12,31 @@
 #             |__/                                                        #
 ###########################################################################
 
-$DEFAULT_FILE_PATH = "https://telekom-my.sharepoint.de/personal/lucas_ressler_t-systems_com/Documents/Dokumente/Input-Data/Kopie von FW rules TSA-v1.xlsx"
-$SHEETNAME_SERVERGROUPS = "TSA-Servergroups"
-$SHEETNAME_PORTGROUPS = "TSA-Portgroups"
-$SHEETNAME_RULES = "TSA-Rules"
+$DEFAULT_CONF_PATH = "$HOME\arcaignis.json"
 $TEST_PREFIX = "ArcaIgnis-Test---"
 
-# TODO: find a better way to get these...
-# $USERNAME =
-# $PASSWORD =
-# $TENNANT =
+function Assert-Format($x, [Hashtable]$format, $parent = $null) {
+    foreach ($key in $format.Keys) {
+        $fullname = "$parent.$key".Trim(".")
+        if ($null -eq $x.$key) { throw "Missing field '$fullname'" }
+        Assert-Format $x.$key $format.$key $fullname
+    }
+}
+function Get-Config([String]$conf_path) {
+    $config = Get-Content $conf_path | ConvertFrom-Json
+    Assert-Format $config @{
+        api = @{
+            url_vra8 = @{}
+            catalog_ids = @{ servergroups = @{}; portgroups = @{}; rules = @{} }
+            credentials = @{ username = @{}; password = @{}; tennant = @{} }
+        }
+        excel = @{
+            filepath = @{}
+            sheetnames = @{ servergroups = @{}; portgroups = @{}; rules = @{} }
+        }
+    }
 
-function Get-Config {
-    $url_vra8 = "https://cus.val001c002vie1x.c002.vie1.fci.ts-ian.net"
-
+    $url_vra8 = $config.api.url_vra8
     $regex_cidr = "([1-9]|[1-2][0-9]|3[0-2])"             # Decimal number from 1-32
     $regex_u8 = "([0-1]?[0-9]{1,2}|2([0-4][0-9]|5[0-5]))" # Decimal number from 0-255
     $regex_ip = "($regex_u8\.){3}$regex_u8"               # u8.u8.u8.u8
@@ -33,18 +44,17 @@ function Get-Config {
     $regex_u16_range = "$regex_u16(\s*-\s*$regex_u16)?"                                      # u16 or u16-u16
 
     @{
-        url = @{
-            refresh_token = "$url_vra8/csp/gateway/am/api/login?access_token" 
-            login = "$url_vra8/iaas/api/login"
-            deployments = "$url_vra8/deployment/api/deployments"
-            project_id = "$url_vra8/iaas/api/projects"
-            items = "$url_vra8/catalog/api/items"
-        }
-        catalog = @{
-            # TODO: where tf do these come from
-            security_groups = "2414bfd4-f5a5-37d7-a7bc-936ee9b1df7b"
-            services = "3e6534e8-f12d-38e3-8da4-987dda5c7c3e"
-            fw_rules = "68f0139a-36b9-3b58-b5d5-754d7e3c93d0"
+        excel = $config.excel
+        api = @{
+            catalog_ids = $config.api.catalog_ids
+            credentials = $config.api.credentials
+            urls = @{
+                refresh_token = "$url_vra8/csp/gateway/am/api/login?access_token" 
+                login = "$url_vra8/iaas/api/login"
+                deployments = "$url_vra8/deployment/api/deployments"
+                project_id = "$url_vra8/iaas/api/projects"
+                items = "$url_vra8/catalog/api/items"
+            }
         }
         regex = @{
             groupname = "[A-Za-z0-9_-]+"
@@ -60,7 +70,6 @@ function Get-Config {
         }
     }
 }
-
 
 class ExcelHandle {
     [__ComObject]$app
@@ -154,9 +163,12 @@ class ApiHandle {
     [String]$url_deployments
     [String]$url_items
     
-    ApiHandle([String]$username, [String]$password, [String]$tennant_name, [Hashtable]$config) {
-        $this.url_deployments = $config.url.deployments
-        $this.url_items = $config.url.items
+    ApiHandle([Hashtable]$config) {
+        $this.url_deployments = $config.api.urls.deployments
+        $this.url_items = $config.api.urls.items
+        $username = $config.api.credentials.username
+        $password = $config.api.credentials.password
+        $tennant = $config.api.credentials.tennant
 
         # very dangerously disabling validating certification
         # TODO: find out if there is a better way
@@ -168,7 +180,7 @@ class ApiHandle {
                 username = $username
                 password = $password
             } | ConvertTo-Json
-            $response = Invoke-RestMethod $config.url.refresh_token -Method Post -ContentType "application/json" -Body $body
+            $response = Invoke-RestMethod $config.api.urls.refresh_token -Method Post -ContentType "application/json" -Body $body
             $refresh_token = $response.refresh_token
         } catch {
             throw "Failed to obtain refresh token: $($_.Exception.Message)"
@@ -179,7 +191,7 @@ class ApiHandle {
             $body = @{
                 refreshToken = $refresh_token
             } | ConvertTo-Json
-            $response = Invoke-RestMethod $config.url.login -Method Post -ContentType "application/json" -Body $body
+            $response = Invoke-RestMethod $config.api.urls.login -Method Post -ContentType "application/json" -Body $body
             $access_token = $response.token
 
             $this.headers = @{
@@ -191,7 +203,7 @@ class ApiHandle {
 
         # get project id
         try {
-            $url = "$($config.url.project_id)?`$filter=name eq '$tennant_name'" 
+            $url = "$($config.api.urls.project_id)?`$filter=name eq '$tennant'" 
             $response = Invoke-RestMethod $url -Method Get -Headers $this.headers
         } catch {
             throw "Failed to get project id: $($_.Exception.Message)"
@@ -276,11 +288,8 @@ function ParseDataSheet {
         }
 
         if (-not $data_cells[$i]) {
-            if ($format[$i]["is_optional"]) {
-                continue
-            } else {
-                throw "Missing ${dbg_name}: row $row, column $col"
-            }
+            if ($format[$i]["is_optional"]) { continue }
+            else { throw "Missing ${dbg_name}: row $row, column $col" }
         }
 
         if ($format[$i]["is_array"]) {
@@ -292,11 +301,8 @@ function ParseDataSheet {
                 }
 
                 $value += if ($subparser) {
-                    try {
-                        & $subparser $entry
-                    } catch {
-                        throw "Invalid ${dbg_name}: row $row, column ${col}: $($_.Exception.Message)"
-                    }
+                    try { & $subparser $entry }
+                    catch { throw "Invalid ${dbg_name}: row $row, column ${col}: $($_.Exception.Message)" }
                 } else {
                     $entry
                 }
@@ -307,11 +313,8 @@ function ParseDataSheet {
             }
 
             $value = if ($subparser) {
-                try {
-                    & $subparser $data_cells[$i].Trim()
-                } catch {
-                    throw "Invalid ${dbg_name}: row $row, column ${col}: $($_.Exception.Message)"
-                }
+                try { & $subparser $data_cells[$i].Trim() }
+                catch { throw "Invalid ${dbg_name}: row $row, column ${col}: $($_.Exception.Message)" }
             } else {
                 $data_cells[$i].Trim()
             }
@@ -453,6 +456,7 @@ function ConvertRulesData ([Hashtable]$data, [String]$action) {
         sourceType = "Group"
         destinationType = "Group"
         serviceType = "Service"
+        # TODO: Allow "any" as Service?
         sources = @()
         destinations = @()
         services = @()
@@ -505,9 +509,9 @@ function Get-ServergroupsConfig([Hashtable]$config) {
                 is_array = $true
             }
         )
-        sheet_name = $SHEETNAME_SERVERGROUPS
         resource_name = "Security Group"
-        catalog_id = $config.catalog.security_groups
+        sheet_name = $config.excel.sheetnames.servergroups
+        catalog_id = $config.api.catalog_ids.servergroups
         converter = {
             param ([hashtable]$data, [String]$action)
             ConvertServergroupsData $data $action
@@ -544,15 +548,14 @@ function Get-PortgroupsConfig([Hashtable]$config) {
                 is_array = $true
             }
         )
-        sheet_name = $SHEETNAME_PORTGROUPS
         resource_name = "Service"
-        catalog_id = $config.catalog.services
+        sheet_name = $config.excel.sheetnames.portgroups
+        catalog_id = $config.api.catalog_ids.portgroups
         converter = {
             param ([Hashtable]$data, [String]$action)
             ConvertPortgroupsData $data $action 
         }
     }
-        
 }
 
 function Get-RulesConfig([Hashtable]$config) {
@@ -600,9 +603,9 @@ function Get-RulesConfig([Hashtable]$config) {
                 is_optional = $true
             }
         )
-        sheet_name = $SHEETNAME_RULES
         resource_name = "FW-Rule"
-        catalog_id = $config.catalog.fw_rules
+        sheet_name = $config.excel.sheetnames.rules
+        catalog_id = $config.api.catalog_ids.rules
         converter = {
             param ([Hashtable]$data, [String]$action)
             ConvertRulesData $data $action
@@ -619,20 +622,12 @@ function ShowPercentage ([Int]$i, [Int]$total) {
     Write-Host -NoNewline "...$([Math]::Floor(($i * 100 + 50) / $total))%`r"
 }
 function Punct ([Int]$achieved, [Int]$total) {
-    if ($total -eq 0) {
-        return "."
-    }
-
+    if ($total -eq 0) { return "." }
     [Float]$ratio = $achieved / $total
-    if ($ratio -ge 1.0) {
-        "! :D"
-    } elseif ($ratio -ge 0.75) {
-        ". :)"
-    } elseif ($ratio -ge 0.25) {
-        " :/"
-    } else {
-        "... :("
-    }
+        if ($ratio -eq 1.00) {"! :D" }
+    elseif ($ratio -ge 0.75) { ". :)" }
+    elseif ($ratio -ge 0.25) { " :/" }
+    else                     { "... :(" }
 }
 
 
@@ -776,14 +771,17 @@ function HandleDataSheet {
     Write-Host "Filled out creation status for $sheet_name."
 }
 
-function Main([String]$file_path) {
-    $config = Get-Config
+function Main([String]$conf_path) {
+    Write-Host "Loading config from $conf_path..."
+    try { $config = Get-Config $conf_path }
+    catch { $Host.UI.WriteErrorLine($_.Exception.Message); exit 666 }
+
     Write-Host "Initialising communication with API..."
-    try { $api = [ApiHandle]::New($USERNAME, $PASSWORD, $TENNANT, $config) }
+    try { $api = [ApiHandle]::New($config) }
     catch { $Host.UI.WriteErrorLine($_.Exception.Message); exit 666 }
 
     Write-Host "Opening Excel-Instance..."
-    try { $excel = [ExcelHandle]::new($file_path) }
+    try { $excel = [ExcelHandle]::new($config.excel.filepath) }
     catch { $Host.UI.WriteErrorLine($_.Exception.Message); exit 666 }
 
     foreach ($sheet_config in @(
@@ -800,5 +798,5 @@ function Main([String]$file_path) {
     Write-Host "Done!"
 }
 
-$file_path = if($args[0]) {$args[0]} else {$DEFAULT_FILE_PATH}
-Main $file_path
+$conf_path = if($args[0]) {$args[0]} else {$DEFAULT_CONF_PATH}
+Main $conf_path
