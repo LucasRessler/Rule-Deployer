@@ -18,7 +18,7 @@ $TEST_PREFIX = "ArcaIgnis-Test---"
 function Assert-Format($x, [Hashtable]$format, $parent = $null) {
     foreach ($key in $format.Keys) {
         $fullname = "$parent.$key".Trim(".")
-        if ($null -eq $x.$key) { throw "Missing field '$fullname'" }
+        if ($null -eq $x.$key) { throw "Missing config field '$fullname'" }
         Assert-Format $x.$key $format.$key $fullname
     }
 }
@@ -26,7 +26,7 @@ function Get-Config([String]$conf_path) {
     $config = Get-Content $conf_path | ConvertFrom-Json
     Assert-Format $config @{
         api = @{
-            url_vra8 = @{}
+            base_url = @{}
             catalog_ids = @{ servergroups = @{}; portgroups = @{}; rules = @{} }
             credentials = @{ username = @{}; password = @{}; tennant = @{} }
         }
@@ -36,7 +36,7 @@ function Get-Config([String]$conf_path) {
         }
     }
 
-    $url_vra8 = $config.api.url_vra8
+    $base_url = $config.api.base_url
     $regex_cidr = "([1-9]|[1-2][0-9]|3[0-2])"             # Decimal number from 1-32
     $regex_u8 = "([0-1]?[0-9]{1,2}|2([0-4][0-9]|5[0-5]))" # Decimal number from 0-255
     $regex_ip = "($regex_u8\.){3}$regex_u8"               # u8.u8.u8.u8
@@ -49,19 +49,19 @@ function Get-Config([String]$conf_path) {
             catalog_ids = $config.api.catalog_ids
             credentials = $config.api.credentials
             urls = @{
-                refresh_token = "$url_vra8/csp/gateway/am/api/login?access_token" 
-                login = "$url_vra8/iaas/api/login"
-                deployments = "$url_vra8/deployment/api/deployments"
-                project_id = "$url_vra8/iaas/api/projects"
-                items = "$url_vra8/catalog/api/items"
+                refresh_token = "$base_url/csp/gateway/am/api/login?access_token" 
+                project_id = "$base_url/iaas/api/projects"
+                login = "$base_url/iaas/api/login"
+                items = "$base_url/catalog/api/items"
+                deployments = "$base_url/deployment/api/deployments"
             }
         }
         regex = @{
             groupname = "[A-Za-z0-9_-]+"
             servicerequest = "[A-Za-z0-9_-]+"
             ip_addr = $regex_ip
-            ip_cidr = "$regex_ip(/$regex_cidr)?"           # ip or ip/cidr
-            port_range = "[A-Za-z]+\s*:\s$regex_u16_range" # protocol:u16-range
+            ip_cidr = "$regex_ip(/$regex_cidr)?"     # ip or ip/cidr
+            port = "[A-Za-z]+\s*:\s*$regex_u16_range" # protocol:u16-range
         }
         color = @{
             parse_error = 255 # Red
@@ -364,7 +364,12 @@ function ParsePort([String]$raw_input) {
     $port = @{}
 
     $split_input = $raw_input.Split(":")
-    $port["protocol"] = $split_input[0].Trim()
+    $protocol = $split_input[0].Trim().ToUpper()
+
+    if ($protocol -notin @("TCP", "UDP")) {
+        throw "Invalid Protocol: '$protocol', expected TCP or UDP"
+    }
+    $port["protocol"] = $protocol
 
     $port_addresses = $split_input[1].Split("-")
     $port["start"] = $port_addresses[0].Trim()
@@ -380,7 +385,6 @@ function ParsePort([String]$raw_input) {
 
     $port
 }
-
 
 # Converters
 function ConvertServergroupsData([Hashtable]$data, [String]$action) {
@@ -473,7 +477,6 @@ function ConvertRulesData ([Hashtable]$data, [String]$action) {
     $body
 }
 
-
 # Data Configs
 function Get-ServergroupsConfig([Hashtable]$config) {
     @{
@@ -502,7 +505,7 @@ function Get-ServergroupsConfig([Hashtable]$config) {
                 is_optional = $true
             }
             @{
-                dbg_name = "Servicerequest NSX"
+                dbg_name = "NSX Servicerequest"
                 field_name = "servicerequest"
                 regex = $config.regex.servicerequest
                 is_optional = $true
@@ -622,6 +625,7 @@ function ShowPercentage ([Int]$i, [Int]$total) {
     Write-Host -NoNewline "...$([Math]::Floor(($i * 100 + 50) / $total))%`r"
 }
 function Punct ([Int]$achieved, [Int]$total) {
+    if ($achieved -gt $total) { return "!? >:O"}
     if ($total -eq 0) { return "." }
     [Float]$ratio = $achieved / $total
         if ($ratio -eq 1.00) {"! :D" }
@@ -678,7 +682,7 @@ function HandleDataSheet {
         $deployed
     }
 
-    function AwaitDeployments([Hashtable[]]$input_data, [Bool]$is_reattempt) {
+    function AwaitDeployments([Hashtable[]]$input_data, [Bool]$last_chance) {
         [Hashtable[]]$reattempt = @()
         [Int]$num_deployed = $input_data.Length
         [Int]$num_successful = 0
@@ -693,7 +697,7 @@ function HandleDataSheet {
             if ($status -eq [DeploymentStatus]::Successful) {
                 $num_successful++
                 $excel.UpdateCreationStatus($sheet_config, $row_index, "$action Successful", $config.color.success)
-            } elseif ($is_reattempt) {
+            } elseif ($last_chance) {
                 $Host.UI.WriteErrorLine("->> Creation and attempted update of resource at row $row_index in $sheet_name failed")
                 $excel.UpdateCreationStatus($sheet_config, $row_index, "Crate Failed", $config.color.dploy_error)
             } else {
@@ -772,29 +776,35 @@ function HandleDataSheet {
 }
 
 function Main([String]$conf_path) {
-    Write-Host "Loading config from $conf_path..."
-    try { $config = Get-Config $conf_path }
-    catch { $Host.UI.WriteErrorLine($_.Exception.Message); exit 666 }
-
-    Write-Host "Initialising communication with API..."
-    try { $api = [ApiHandle]::New($config) }
-    catch { $Host.UI.WriteErrorLine($_.Exception.Message); exit 666 }
-
-    Write-Host "Opening Excel-Instance..."
-    try { $excel = [ExcelHandle]::new($config.excel.filepath) }
-    catch { $Host.UI.WriteErrorLine($_.Exception.Message); exit 666 }
-
-    foreach ($sheet_config in @(
-        Get-ServergroupsConfig $config
-        Get-PortgroupsConfig $config
-        Get-RulesConfig $config
-    )) {
-        try { HandleDataSheet -excel_handle $excel -api_handle $api -sheet_config $sheet_config -config $config | Out-Null }
-        catch { $Host.UI.WriteErrorLine($_.Exception.Message) }
+    try {
+        Write-Host "Loading config from $conf_path..."
+        $config = Get-Config $conf_path 
+        Write-Host "Initialising communication with API..."
+        $api = [ApiHandle]::New($config) 
+        Write-Host "Opening Excel-Instance..."
+        $excel = [ExcelHandle]::new($config.excel.filepath) 
+    }
+    catch {
+        $Host.UI.WriteErrorLine($_.Exception.Message)
+        if ($excel) { $excel.Release() }
+        exit 666
     }
 
-    PrintDivider
-    $excel.Release()
+    try {
+        foreach ($sheet_config in @(
+            Get-ServergroupsConfig $config
+            Get-PortgroupsConfig $config
+            Get-RulesConfig $config
+        )) {
+            try { HandleDataSheet -excel_handle $excel -api_handle $api -sheet_config $sheet_config -config $config | Out-Null }
+            catch { $Host.UI.WriteErrorLine($_.Exception.Message) }
+        }
+    }
+    finally {
+        PrintDivider
+        $excel.Release()
+    }
+    
     Write-Host "Done!"
 }
 
