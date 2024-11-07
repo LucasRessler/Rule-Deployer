@@ -60,8 +60,8 @@ function Get-Config([String]$conf_path) {
             groupname = "[A-Za-z0-9_-]+"
             servicerequest = "[A-Za-z0-9_-]+"
             ip_addr = $regex_ip
-            ip_cidr = "$regex_ip(/$regex_cidr)?"     # ip or ip/cidr
-            port = "[A-Za-z]+\s*:\s*$regex_u16_range" # protocol:u16-range
+            ip_cidr = "$regex_ip(/$regex_cidr)?"      # ip or ip/cidr
+            port = "[A-Za-z]+\s*:\s*$regex_u16_range" # word:u16-range - protocols checked in `ParsePort`
         }
         color = @{
             parse_error = 255 # Red
@@ -170,10 +170,6 @@ class ApiHandle {
         $password = $config.api.credentials.password
         $tennant = $config.api.credentials.tennant
 
-        # very dangerously disabling validating certification
-        # TODO: find out if there is a better way
-        [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-
         # get refresh token
         try {
             $body = @{
@@ -264,7 +260,6 @@ enum DeploymentStatus {
     Failed
 }
 
-
 function ParseDataSheet {
     param(
         [Hashtable]$data,
@@ -281,49 +276,36 @@ function ParseDataSheet {
         $field_name = $format[$i]["field_name"]
         $dbg_name = $format[$i]["dbg_name"]
         $subparser = $format[$i]["subparser"]
-        $regex = if (-not $format[$i]["regex"]) {
-            ".*" # Match anything if no regex is provided
-        } else {
+        $postparser = $format[$i]["postparser"]
+        $regex_info = $format[$i]["regex_info"]
+        $regex = if ($format[$i]["regex"]) {
             $format[$i]["regex"]
-        }
-
-        if (-not $data_cells[$i]) {
-            if ($format[$i]["is_optional"]) { continue }
-            else { throw "Missing ${dbg_name}: row $row, column $col" }
-        }
-
-        if ($format[$i]["is_array"]) {
-            $value = @()
-            $entries = $data_cells[$i].Split([Environment]::NewLine) | ForEach-Object { $_.Trim() }
-            foreach ($entry in $entries) {
-                if (-not [Regex]::IsMatch($entry, "^$regex$")) {
-                    throw "Invalid ${dbg_name}: row $row, column ${col}: '${entry}'"
-                }
-
-                $value += if ($subparser) {
-                    try { & $subparser $entry }
-                    catch { throw "Invalid ${dbg_name}: row $row, column ${col}: $($_.Exception.Message)" }
-                } else {
-                    $entry
-                }
-            }
         } else {
-            if (-not [Regex]::IsMatch($data_cells[$i].Trim(), "^$regex$")) {
-                throw "Invalid ${dbg_name}q: row $row, column ${col}: '$($data_cells[$i].Trim())'"
-            }
+            ".*" # Match anything if no regex is provided
+        }
 
-            $value = if ($subparser) {
-                try { & $subparser $data_cells[$i].Trim() }
+        function PerElementOperations([String]$value) {
+            if (-not [Regex]::IsMatch($value, "^$regex$")) {
+                throw "Invalid ${dbg_name}: row $row, column ${col}: '$value'$(if ($regex_info) { " - $regex_info" })"
+            }
+            if ($subparser) {
+                try { & $subparser $value }
                 catch { throw "Invalid ${dbg_name}: row $row, column ${col}: $($_.Exception.Message)" }
             } else {
-                $data_cells[$i].Trim()
+                $value
             }
+        }
+
+        $value = $data_cells[$i].Trim()
+        if (-not $value) {
+            if ($format[$i]["is_optional"]) { continue }
+            else { throw "Missing ${dbg_name}: row $row, column $col" }
         }
 
         if($format[$i]["is_unique"] -and $unique_check) {
             if ($unique_check[$field_name]) {
                 if ($unique_check[$field_name][$value]) {
-                    throw "Duplicate ${dbg_name}: row $row, column ${col}: '$($data_cells[$i].Trim())' was already used"
+                    throw "Duplicate ${dbg_name}: row $row, column ${col}: '$value' was already used"
                 } else {
                     $unique_check[$field_name][$value] = $true
                 }
@@ -332,6 +314,16 @@ function ParseDataSheet {
             }
         }
 
+        $value = if($format[$i]["is_array"]) {
+            $value.Split([Environment]::NewLine) | ForEach-Object { PerElementOperations $_.Trim() }
+        } else {
+            PerElementOperations $value
+        }
+
+        if ($postparser) {
+            try { $value = & $postparser $value }
+            catch { throw "Invalid ${dbg_name}: row $row, column ${col}: $($_.Exception.Message)" }
+        }
         $body[$field_name] = $value
     }
 
@@ -339,38 +331,39 @@ function ParseDataSheet {
 }
 
 
-# Subparsers
+# Sub- and Post-Parsers
 function ParseIP([String]$raw_input) {
     # This function expects a prevalidated ipv4 address
     # Either with or without CIDR
     # u8.u8.u8.u8 | u8.u8.u8.u8/cidr
 
     $ip = @{}
-
     $split_input = $raw_input.Split("/")
     $ip["address"] = $split_input[0]
-    if ($split_input[1]) {
-        $ip["net"] = $split_input[1]
-    }
+    if ($split_input[1]) { $ip["net"] = $split_input[1] }
 
     $ip
 }
 
 function ParsePort([String]$raw_input) {
-    # This function expects a prevalidated protocol:port pair
+    # This function expects a prevalidated word:port pair
     # Either with a single port address or a range
-    # protocol:port | protocol:start-end
-
-    $port = @{}
+    # word:port | word:start-end
+    # Checked here:
+    # - `word` is a valid protocol
+    # - `start` less than or equal to `end`
 
     $split_input = $raw_input.Split(":")
     $protocol = $split_input[0].Trim().ToUpper()
 
-    if ($protocol -notin @("TCP", "UDP")) {
-        throw "Invalid Protocol: '$protocol', expected TCP or UDP"
+    if ($protocol -in @("ICMP", "ICMPV4", "ICMPV6")) {
+        throw "protocol $protocol not supported - Please use default ICMP services (ie. 'ICMP ALL' or 'ICMP Echo Request')"
     }
-    $port["protocol"] = $protocol
+    if ($protocol -notin @("TCP", "UDP")) {
+        throw "Invalid Protocol: '$protocol' - Expected TCP or UDP"
+    }
 
+    $port = @{ protocol = $protocol }
     $port_addresses = $split_input[1].Split("-")
     $port["start"] = $port_addresses[0].Trim()
     $port["end"] = if ($port_addresses[1]) {
@@ -386,38 +379,67 @@ function ParsePort([String]$raw_input) {
     $port
 }
 
+function ParseArrayWithAny([String[]]$array) {
+    # This function returns an empty array when the input is `@("any")`
+    # or the input array if it doesn't include "any"
+    # and throws otherwise
+
+    if ("any" -notin $array) {
+        $array
+    } else {
+        if ($array.Length -eq 1) { @() }
+        else { throw "Can't have more than 1 element when using 'any'" }
+    }
+}
+
 # Converters
-function ConvertServergroupsData([Hashtable]$data, [String]$action) {
+enum ApiAction {
+    Create
+    Update
+    Delete
+}
+
+function ConvertServergroupsData([Hashtable]$data, [ApiAction]$action) {
     $name = "$TEST_PREFIX$($data.name)"
+    if ($action -eq [ApiAction]::Delete) {
+        return @{
+            action = "$action"
+            elementsToDelete = @( "$name (IPSET)" )
+        }
+    }
+
     $body = @{
-            action = $action
+            action = "$action"
             name = $name
             groupType = "IPSET"
-    }
-    if ($action -eq "Update") {
-        $body["elementToUpdate"] = "$name (IPSET)"
     }
 
     $addresses = ""
     foreach ($addr in $data.addresses) {
-        if ($addresses -ne "") { $addresses += ", " }
+        if ($addresses) { $addresses += ", " }
         $addresses += $addr.address
         if ($addr.net) { $addresses += "/$($addr.net)" }
     }
+
     $body["ipAddress"] = $addresses
-    
-    if ($data.comment) { $body["description"] = $data.comment }
+    $comment = Join @($data.servicerequest, $data.hostname, $data.comment) " - "
+    if ($comment) { $body["description"] = $comment }
+    if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = "$name (IPSET)" }
     $body
 }
 
-function ConvertPortgroupsData([Hashtable]$data, [String]$action) {
+function ConvertPortgroupsData([Hashtable]$data, [ApiAction]$action) {
     $name = "$TEST_PREFIX$($data.name)"
-    $body =  @{
-        action = $action 
-        name = $name
+    if ($action -eq [ApiAction]::Delete) {
+        return @{
+            action = "$action"
+            elementsToDelete = @($name)
+        }
     }
-    if ($action -eq "Update") {
-        $body["elementToUpdate"] = $name
+
+    $body =  @{
+        action = "$action"
+        name = $name
     }
 
     $used_protocols = @{}
@@ -425,7 +447,7 @@ function ConvertPortgroupsData([Hashtable]$data, [String]$action) {
         $protocol = $portrange.protocol.ToUpper()
         $portstring = $portrange.start
         if ($portrange.start -ne $portrange.end) {
-            $portstring += "-" + $portrange.end
+            $portstring += "-$($portrange.end)"
         }
         if ($used_protocols[$protocol]) {
             $used_protocols[$protocol] += $portstring
@@ -443,37 +465,44 @@ function ConvertPortgroupsData([Hashtable]$data, [String]$action) {
         $i++
     }
 
-    if ($data.comment) { $body["description"] = $data.comment }
+    $comment = Join @($data.servicerequest, $data.comment) " - "
+    if ($comment) { $body["description"] = $comment }
+    if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = $name }
     $body
 }
 
-function ConvertRulesData ([Hashtable]$data, [String]$action) {
-    # TODO: Uhhhh Naming convention??
-    $name = "${TEST_PREFIX}TMPRULE$($data.index)"
+function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
+    # TODO: Insert Jenkins ID instead of "LRAutomation"
+    $name = Join @($data.servicerequest, $data.index, "LRAutomation") "_"
+    $name = "${TEST_PREFIX}$name"
+    if ($action -eq [ApiAction]::Delete) {
+        return @{
+            action = "$action"
+            elementsToDelete = @($name)
+        }
+    }
+
     $body = @{
-        action = $action
+        action = "$action"
         name = $name
-        # TODO: What this mean??
+        # TODO: Columns for Gateway: T1 Payload, T0 Internet - 'T1 Payload' if empty
         gateway = "T1 Payload"
         firewallAction = "Allow"
-        # TODO: Allow multiple types?
-        sourceType = "Group"
-        destinationType = "Group"
-        serviceType = "Service"
-        # TODO: Allow "any" as Service?
+
+        sourceType = if($data.sources.Length) { "Group" } else { "Any" }
+        destinationType = if($data.destinations.Length) { "Group" } else { "Any" }
+        serviceType = if($data.services.Length) { "Service" } else { "Any" }
         sources = @()
         destinations = @()
         services = @()
-    }
-    if ($action -eq "Update") {
-        $body["elementToUpdate"] = $name
     }
 
     foreach ($source in $data.sources) { $body.sources += "$TEST_PREFIX$source (IPSET)" }
     foreach ($destination in $data.destinations) { $body.destinations += "$TEST_PREFIX$destination (IPSET)" }
     foreach ($service in $data.services) { $body.services += "$TEST_PREFIX$service" }
-    
+
     if ($data.comment) { $body["comment"] = $data.comment }
+    if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = $name }
     $body
 }
 
@@ -505,7 +534,7 @@ function Get-ServergroupsConfig([Hashtable]$config) {
                 is_optional = $true
             }
             @{
-                dbg_name = "NSX Servicerequest"
+                dbg_name = "NSX-Servicerequest"
                 field_name = "servicerequest"
                 regex = $config.regex.servicerequest
                 is_optional = $true
@@ -516,7 +545,7 @@ function Get-ServergroupsConfig([Hashtable]$config) {
         sheet_name = $config.excel.sheetnames.servergroups
         catalog_id = $config.api.catalog_ids.servergroups
         converter = {
-            param ([hashtable]$data, [String]$action)
+            param ([hashtable]$data, [ApiAction]$action)
             ConvertServergroupsData $data $action
         }
     }
@@ -544,7 +573,7 @@ function Get-PortgroupsConfig([Hashtable]$config) {
                 is_optional = $true
             },
             @{
-                dbg_name = "Servicerequest NSX"
+                dbg_name = "NSX-Servicerequest"
                 field_name = "servicerequest"
                 regex = $config.regex.servicerequest
                 is_optional = $true
@@ -555,7 +584,7 @@ function Get-PortgroupsConfig([Hashtable]$config) {
         sheet_name = $config.excel.sheetnames.portgroups
         catalog_id = $config.api.catalog_ids.portgroups
         converter = {
-            param ([Hashtable]$data, [String]$action)
+            param ([Hashtable]$data, [ApiAction]$action)
             ConvertPortgroupsData $data $action 
         }
     }
@@ -574,18 +603,24 @@ function Get-RulesConfig([Hashtable]$config) {
                 dbg_name = "NSX-Source"
                 field_name = "sources"
                 regex = $config.regex.groupname
+                regex_info = "Please use a security group name or 'any'"
+                postparser = "ParseArrayWithAny"
                 is_array = $true
             },
             @{
                 dbg_name = "NSX-Destination"
                 field_name = "destinations"
                 regex = $config.regex.groupname
+                regex_info = "Please use a security group name or 'any'"
+                postparser = "ParseArrayWithAny"
                 is_array = $true
             },
             @{
                 dbg_name = "NSX-Ports"
                 field_name = "services"
                 regex = $config.regex.groupname
+                regex_info = "Please use a service name or 'any'"
+                postparser = "ParseArrayWithAny"
                 is_array = $true
             },
             @{
@@ -597,6 +632,7 @@ function Get-RulesConfig([Hashtable]$config) {
                 dbg_name = "NSX-Servicerequest"
                 field_name = "servicerequest"
                 regex = $config.regex.servicerequest
+                # TODO: Should this be optional?
                 is_optional = $true
                 is_array = $true
             },
@@ -604,13 +640,25 @@ function Get-RulesConfig([Hashtable]$config) {
                 dbg_name = "NSX-Customer FW"
                 field_name = "customer_fw"
                 is_optional = $true
+            },
+            @{
+                # TODO
+                dbg_name = "T1 Payload"
+                field_name = "t1_payload"
+                is_optional = $true
+            },
+            @{
+                # TODO
+                dbg_name = "T0 Internet"
+                field_name = "t0_internet"
+                is_optional = $true
             }
         )
         resource_name = "FW-Rule"
         sheet_name = $config.excel.sheetnames.rules
         catalog_id = $config.api.catalog_ids.rules
         converter = {
-            param ([Hashtable]$data, [String]$action)
+            param ([Hashtable]$data, [ApiAction]$action)
             ConvertRulesData $data $action
         }
     }
@@ -633,6 +681,10 @@ function Punct ([Int]$achieved, [Int]$total) {
     elseif ($ratio -ge 0.25) { " :/" }
     else                     { "... :(" }
 }
+function Join([Object[]]$arr, [String]$delim) {
+    foreach ($x in $arr) { if ($x) { $s += "$(if ($s) {$delim})$x" } }
+    return $s
+}
 
 
 function HandleDataSheet {
@@ -651,7 +703,7 @@ function HandleDataSheet {
         Write-Host "Nothing more to do!"
     }
 
-    function DeployRequests([Hashtable[]]$input_data, [String]$action) {
+    function DeployRequests([Hashtable[]]$input_data, [ApiAction]$action) {
         [Int]$num_data = $input_data.Length
         [Hashtable[]]$deployed = @()
 
@@ -670,8 +722,7 @@ function HandleDataSheet {
                     preconverted = $data
                     action = $action
                 }
-            }
-            catch {
+            } catch {
                 $Host.UI.WriteErrorLine("->> Deploy error in ${sheet_name}: $($_.Exception.Message)")
                 $excel.UpdateCreationStatus($sheet_config, $row_index, "Deployment Failed", $config.color.dploy_error)
             }
@@ -699,7 +750,7 @@ function HandleDataSheet {
                 $excel.UpdateCreationStatus($sheet_config, $row_index, "$action Successful", $config.color.success)
             } elseif ($last_chance) {
                 $Host.UI.WriteErrorLine("->> Creation and attempted update of resource at row $row_index in $sheet_name failed")
-                $excel.UpdateCreationStatus($sheet_config, $row_index, "Crate Failed", $config.color.dploy_error)
+                $excel.UpdateCreationStatus($sheet_config, $row_index, "Create/Update Failed", $config.color.dploy_error)
             } else {
                 $reattempt += @{
                     data = $deployment.preconverted
@@ -743,11 +794,11 @@ function HandleDataSheet {
         }
     }
     $num_parsed = $parsed_data.Length
-    Write-Host "$num_parsed/$num_data parsed sucessfully$(Punct $num_parsed $num_data)"
+    Write-Host "$num_parsed/$num_data parsed successfully$(Punct $num_parsed $num_data)"
     if ($num_parsed -eq 0) { PrematurelyDone; return }
 
     # Deploy Creation Requests
-    [Hashtable[]]$deployed_create = DeployRequests $parsed_data "Create"
+    [Hashtable[]]$deployed_create = DeployRequests $parsed_data ([ApiAction]::Create)
     [Int]$num_deployed_create = $deployed_create.Length
     Write-Host "$num_deployed_create/$num_parsed deployed$(Punct $num_deployed_create $num_parsed)"
     if ($num_deployed_create -eq 0) { PrematurelyDone; return }
@@ -761,10 +812,9 @@ function HandleDataSheet {
     if ($num_to_update -eq 0) { PrematurelyDone; return }
 
     # Deploy Update Requests
-    # TODO: Maybe updating should require explicit input
     Write-Host "The failed $(if ($num_to_update -eq 1) {"resource"} else {"resources"}) might already exist."
     Write-Host "I'll attempt to update $(if ($num_to_update -eq 1) {"it"} else {"them"}) instead."
-    [Hashtable[]]$deployed_update = DeployRequests $to_update "Update"
+    [Hashtable[]]$deployed_update = DeployRequests $to_update ([ApiAction]::Update)
     [Int]$num_deployed_update = $deployed_update.Length
     Write-Host "$num_deployed_update/$num_to_update deployed$(Punct $num_deployed_update $num_to_update)"
     if ($num_deployed_update -eq 0) { PrematurelyDone; return }
@@ -776,6 +826,9 @@ function HandleDataSheet {
 }
 
 function Main([String]$conf_path) {
+    # very dangerously disabling validating certification
+    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+
     try {
         Write-Host "Loading config from $conf_path..."
         $config = Get-Config $conf_path 
@@ -783,8 +836,7 @@ function Main([String]$conf_path) {
         $api = [ApiHandle]::New($config) 
         Write-Host "Opening Excel-Instance..."
         $excel = [ExcelHandle]::new($config.excel.filepath) 
-    }
-    catch {
+    } catch {
         $Host.UI.WriteErrorLine($_.Exception.Message)
         if ($excel) { $excel.Release() }
         exit 666
