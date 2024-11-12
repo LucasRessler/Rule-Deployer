@@ -15,10 +15,42 @@
 $DEFAULT_CONF_PATH = "$HOME\arcaignis.json"
 $TEST_PREFIX = "ArcaIgnis-Test---"
 
+# Utils
+function Join([Object[]]$arr, [String]$delim) {
+    foreach ($x in $arr) { if ($x) { $s += "$(if ($s) {$delim})$x" } }
+    return $s
+}
+
+function Format-Error {
+    param ( [String]$message, [String]$cause, [String[]]$hints )
+    if ($cause) { $message += "`n| Caused by: " + (Join $cause.Split([Environment]::NewLine) "`n| ")}
+    foreach ($hint in $hints) { $message += "`n| ->> $hint" }
+    return $message
+}
+
+function PrintDivider {
+    Write-Host "------------------------"
+}
+
+function ShowPercentage ([Int]$i, [Int]$total) {
+    Write-Host -NoNewline "...$([Math]::Floor(($i * 100 + 50) / $total))%`r"
+}
+
+function Punct ([Int]$achieved, [Int]$total) {
+    if ($achieved -gt $total) { return "!? >:O"}
+    if ($total -eq 0) { return "." }
+    [Float]$ratio = $achieved / $total
+        if ($ratio -eq 1.00) {"! :D" }
+    elseif ($ratio -ge 0.75) { ". :)" }
+    elseif ($ratio -ge 0.25) { " :/" }
+    else                     { "... :(" }
+}
+
+# Config
 function Assert-Format($x, [Hashtable]$format, $parent = $null) {
     foreach ($key in $format.Keys) {
-        $fullname = "$parent.$key".Trim(".")
-        if ($null -eq $x.$key) { throw "Missing config field '$fullname'" }
+        $fullname = Join @( $parent, $key ) "."
+        if ($null -eq $x.$key) { throw "Missing field '$fullname'" }
         Assert-Format $x.$key $format.$key $fullname
     }
 }
@@ -71,6 +103,7 @@ function Get-Config([String]$conf_path) {
     }
 }
 
+# Handles
 class ExcelHandle {
     [__ComObject]$app
     [__ComObject]$workbook
@@ -101,7 +134,7 @@ class ExcelHandle {
         [String]$sheet_name = $sheet_config.sheet_name
         [Int]$output_column = $sheet_config.format.Length + 1
         try { $sheet = $this.workbook.Worksheets.Item($sheet_name) }
-        catch { throw "Sheet '$sheet_name' could not be opened: $($_.Exception.Message)" }
+        catch { throw Format-Error -Message "Sheet '$sheet_name' could not be opened" -Cause $_.Exception.Message }
 
         $num_rows = $sheet.UsedRange.Rows.Count
         [Hashtable[]]$data = @()
@@ -132,10 +165,12 @@ class ExcelHandle {
         [Int]$output_column = $sheet_config.format.Length + 1
         [String]$sheet_name = $sheet_config.sheet_name
         try { $sheet = $this.workbook.Worksheets.Item($sheet_name) }
-        catch { throw "Sheet '$sheet_name' could not be opened: $($_.Exception.Message)" }
+        catch { throw Format-Error -Message "Sheet '$sheet_name' could not be opened" -Cause $_.Exception.Message }
         $cell = $sheet.Cells.Item($row_index, $output_column)
-        $cell.Value = $value
-        $cell.Font.Color = $color
+        if ($cell.Text -ne $value) {
+            $cell.Value = Join @($cell.Text, $value) ", "
+            $cell.Font.Color = $color
+        }
     }
     
     [Void] Release() {
@@ -176,10 +211,13 @@ class ApiHandle {
                 username = $username
                 password = $password
             } | ConvertTo-Json
-            $response = Invoke-RestMethod $config.api.urls.refresh_token -Method Post -ContentType "application/json" -Body $body
+            $response = Invoke-RestMethod $config.api.urls.refresh_token -Method Post -ContentType "application/json" -Body $body -TimeoutSec 5
             $refresh_token = $response.refresh_token
         } catch {
-            throw "Failed to obtain refresh token: $($_.Exception.Message)"
+            throw Format-Error -Message "Failed to obtain refresh token!" -Cause $_.Exception.Message -Hints @(
+                "Assure that you're connected to the Admin-LAN"
+                "Ensure your username and password are valid"
+            )
         }
 
         # get access token
@@ -194,7 +232,9 @@ class ApiHandle {
                 Authorization = "Bearer $access_token"
             }
         } catch {
-            throw "Failed to obtain access token: $($_.Exception.Message)"
+            throw Format-Error -Message "Failed to obtain access token!" -Cause $_.Exception.Message -Hints @(
+                "Ensure your connection is stable"
+            )
         }
 
         # get project id
@@ -202,13 +242,16 @@ class ApiHandle {
             $url = "$($config.api.urls.project_id)?`$filter=name eq '$tennant'" 
             $response = Invoke-RestMethod $url -Method Get -Headers $this.headers
         } catch {
-            throw "Failed to get project id: $($_.Exception.Message)"
+            throw Format-Error -Message "Failed to get project id!" -Cause $_.Exception.Message
         }
 
         if ($response.content.Length -eq 1) {
             $this.project_id = $response.content[0].id
         } else {
-            throw "Excpected exactly 1 project with the given tennant name, found $($response.content.Length)!"
+            throw Format-Error -Message "Failed to get project id!" -Hints @(
+                "Expected exactly 1 project with the given Tennant name, found $($response.content.Length)"
+                "Maybe '$tennant' is not a valid tennant name?"
+            )
         }
     }
 
@@ -225,6 +268,7 @@ class ApiHandle {
             projectId = $this.project_id
             inputs = $inputs
         }
+
         $response = $this.Post("$($this.url_items)/$catalog_id/request", $body)
         $deployment_id = $response.deploymentId
         if ($null -eq $deployment_id) { throw "Received invalid response: $($response | ConvertTo-Json)" }
@@ -278,11 +322,7 @@ function ParseDataSheet {
         $subparser = $format[$i]["subparser"]
         $postparser = $format[$i]["postparser"]
         $regex_info = $format[$i]["regex_info"]
-        $regex = if ($format[$i]["regex"]) {
-            $format[$i]["regex"]
-        } else {
-            ".*" # Match anything if no regex is provided
-        }
+        $regex = if ($format[$i]["regex"]) { $format[$i]["regex"] } else { ".*" } # Match anything if no regex is provided
 
         function PerElementOperations([String]$value) {
             if (-not [Regex]::IsMatch($value, "^$regex$")) {
@@ -357,7 +397,7 @@ function ParsePort([String]$raw_input) {
     $protocol = $split_input[0].Trim().ToUpper()
 
     if ($protocol -in @("ICMP", "ICMPV4", "ICMPV6")) {
-        throw "protocol $protocol not supported - Please use default ICMP services (ie. 'ICMP ALL' or 'ICMP Echo Request')"
+        throw "Protocol $protocol not supported - Please use default ICMP services (i.e. 'ICMP ALL' or 'ICMP Echo Request')"
     }
     if ($protocol -notin @("TCP", "UDP")) {
         throw "Invalid Protocol: '$protocol' - Expected TCP or UDP"
@@ -373,16 +413,17 @@ function ParsePort([String]$raw_input) {
     }
 
     if ([Int]($port["start"]) -gt [Int]($port["end"])) {
-        throw "Invalid range: '$($port["start"])-$($port["end"])'"
+        throw "Invalid Range: '$($port["start"])-$($port["end"])'"
     }
 
     $port
 }
 
 function ParseArrayWithAny([String[]]$array) {
-    # This function returns an empty array when the input is `@("any")`
-    # or the input array if it doesn't include "any"
-    # and throws otherwise
+    # This function
+    # - returns the input array if it doesn't include "any"
+    # - returns an empty array when the input is `@("any")` (case insensitive)
+    # - throws in any other case
 
     if ("any" -notin $array) {
         $array
@@ -392,7 +433,19 @@ function ParseArrayWithAny([String[]]$array) {
     }
 }
 
-# Converters
+# Expanders and Converters
+function ExpandRulesData([Hashtable]$data_packet) {
+    $gateways = @()
+    $data = $data_packet.data
+    if ($data.t0_internet) { $gateways += "T0 Internet" }
+    if ($data.t1_payload -or -not $gateways.Length) { $gateways += "T1 Payload" }
+    $gateways | ForEach-Object {
+        $new_packet = $data_packet.Clone()
+        $new_packet.data.gateway = $_
+        $new_packet
+    }
+}
+
 enum ApiAction {
     Create
     Update
@@ -414,15 +467,8 @@ function ConvertServergroupsData([Hashtable]$data, [ApiAction]$action) {
             groupType = "IPSET"
     }
 
-    $addresses = ""
-    foreach ($addr in $data.addresses) {
-        if ($addresses) { $addresses += ", " }
-        $addresses += $addr.address
-        if ($addr.net) { $addresses += "/$($addr.net)" }
-    }
-
-    $body["ipAddress"] = $addresses
-    $comment = Join @($data.servicerequest, $data.hostname, $data.comment) " - "
+    $body["ipAddress"] = Join ( $data.addresses | ForEach-Object { Join @($_.address, $_.net) "/" } ) ", "
+    $comment = Join @((Join $data.servicerequest ", "), $data.hostname, $data.comment) " - "
     if ($comment) { $body["description"] = $comment }
     if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = "$name (IPSET)" }
     $body
@@ -465,7 +511,7 @@ function ConvertPortgroupsData([Hashtable]$data, [ApiAction]$action) {
         $i++
     }
 
-    $comment = Join @($data.servicerequest, $data.comment) " - "
+    $comment = Join @((Join $data.servicerequest ", "), $data.comment) " - "
     if ($comment) { $body["description"] = $comment }
     if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = $name }
     $body
@@ -478,28 +524,23 @@ function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
     if ($action -eq [ApiAction]::Delete) {
         return @{
             action = "$action"
+            gateway = $data.gateway
             elementsToDelete = @($name)
-        }
+        } 
     }
 
     $body = @{
         action = "$action"
         name = $name
-        # TODO: Columns for Gateway: T1 Payload, T0 Internet - 'T1 Payload' if empty
-        gateway = "T1 Payload"
+        gateway = $data.gateway
         firewallAction = "Allow"
-
         sourceType = if($data.sources.Length) { "Group" } else { "Any" }
         destinationType = if($data.destinations.Length) { "Group" } else { "Any" }
         serviceType = if($data.services.Length) { "Service" } else { "Any" }
-        sources = @()
-        destinations = @()
-        services = @()
+        sources = @( $data.sources | ForEach-Object { "${TEST_PREFIX}$_ (IPSET)" } )
+        destinations = @( $data.destinations | ForEach-Object { "${TEST_PREFIX}$_ (IPSET)" } )
+        services = @( $data.services | ForEach-Object { "${TEST_PREFIX}$_" } )
     }
-
-    foreach ($source in $data.sources) { $body.sources += "$TEST_PREFIX$source (IPSET)" }
-    foreach ($destination in $data.destinations) { $body.destinations += "$TEST_PREFIX$destination (IPSET)" }
-    foreach ($service in $data.services) { $body.services += "$TEST_PREFIX$service" }
 
     if ($data.comment) { $body["comment"] = $data.comment }
     if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = $name }
@@ -526,6 +567,7 @@ function Get-ServergroupsConfig([Hashtable]$config) {
             @{
                 dbg_name = "Host Name"
                 field_name = "hostname"
+                # TODO: Should this be optional?
                 is_optional = $true
             }
             @{
@@ -537,8 +579,10 @@ function Get-ServergroupsConfig([Hashtable]$config) {
                 dbg_name = "NSX-Servicerequest"
                 field_name = "servicerequest"
                 regex = $config.regex.servicerequest
+                # TODO: Should this be optional?
                 is_optional = $true
-                is_array = $true
+                # TODO: Hnnngghh??
+                # is_array = $true
             }
         )
         resource_name = "Security Group"
@@ -576,7 +620,9 @@ function Get-PortgroupsConfig([Hashtable]$config) {
                 dbg_name = "NSX-Servicerequest"
                 field_name = "servicerequest"
                 regex = $config.regex.servicerequest
+                # TODO: Should this be optional?
                 is_optional = $true
+                # TODO: Hnnngghh??
                 is_array = $true
             }
         )
@@ -603,7 +649,7 @@ function Get-RulesConfig([Hashtable]$config) {
                 dbg_name = "NSX-Source"
                 field_name = "sources"
                 regex = $config.regex.groupname
-                regex_info = "Please use a security group name or 'any'"
+                regex_info = "Please use a Security Group Name or 'any'"
                 postparser = "ParseArrayWithAny"
                 is_array = $true
             },
@@ -611,7 +657,7 @@ function Get-RulesConfig([Hashtable]$config) {
                 dbg_name = "NSX-Destination"
                 field_name = "destinations"
                 regex = $config.regex.groupname
-                regex_info = "Please use a security group name or 'any'"
+                regex_info = "Please use a Security Group Name or 'any'"
                 postparser = "ParseArrayWithAny"
                 is_array = $true
             },
@@ -619,7 +665,7 @@ function Get-RulesConfig([Hashtable]$config) {
                 dbg_name = "NSX-Ports"
                 field_name = "services"
                 regex = $config.regex.groupname
-                regex_info = "Please use a service name or 'any'"
+                regex_info = "Please use a Service Name or 'any'"
                 postparser = "ParseArrayWithAny"
                 is_array = $true
             },
@@ -642,13 +688,11 @@ function Get-RulesConfig([Hashtable]$config) {
                 is_optional = $true
             },
             @{
-                # TODO
                 dbg_name = "T1 Payload"
                 field_name = "t1_payload"
                 is_optional = $true
             },
             @{
-                # TODO
                 dbg_name = "T0 Internet"
                 field_name = "t0_internet"
                 is_optional = $true
@@ -657,35 +701,16 @@ function Get-RulesConfig([Hashtable]$config) {
         resource_name = "FW-Rule"
         sheet_name = $config.excel.sheetnames.rules
         catalog_id = $config.api.catalog_ids.rules
+        expander = {
+            param([Hashtable]$data)
+            ExpandRulesData $data
+        }
         converter = {
             param ([Hashtable]$data, [ApiAction]$action)
             ConvertRulesData $data $action
         }
     }
 }
-
-
-# Utils
-function PrintDivider {
-    Write-Host "------------------------"
-}
-function ShowPercentage ([Int]$i, [Int]$total) {
-    Write-Host -NoNewline "...$([Math]::Floor(($i * 100 + 50) / $total))%`r"
-}
-function Punct ([Int]$achieved, [Int]$total) {
-    if ($achieved -gt $total) { return "!? >:O"}
-    if ($total -eq 0) { return "." }
-    [Float]$ratio = $achieved / $total
-        if ($ratio -eq 1.00) {"! :D" }
-    elseif ($ratio -ge 0.75) { ". :)" }
-    elseif ($ratio -ge 0.25) { " :/" }
-    else                     { "... :(" }
-}
-function Join([Object[]]$arr, [String]$delim) {
-    foreach ($x in $arr) { if ($x) { $s += "$(if ($s) {$delim})$x" } }
-    return $s
-}
-
 
 function HandleDataSheet {
     param (
@@ -797,6 +822,15 @@ function HandleDataSheet {
     Write-Host "$num_parsed/$num_data parsed successfully$(Punct $num_parsed $num_data)"
     if ($num_parsed -eq 0) { PrematurelyDone; return }
 
+    # Expand Data
+    if ($sheet_config.expander) {
+        $parsed_data = $parsed_data | ForEach-Object { & $sheet_config.expander -data $_ }
+        if ($parsed_data.Length -gt $num_parsed) {
+            $num_parsed = $parsed_data.Length
+            Write-Host "Expanded to data for $num_parsed API calls!"
+        }
+    }
+
     # Deploy Creation Requests
     [Hashtable[]]$deployed_create = DeployRequests $parsed_data ([ApiAction]::Create)
     [Int]$num_deployed_create = $deployed_create.Length
@@ -834,7 +868,7 @@ function Main([String]$conf_path) {
         $config = Get-Config $conf_path 
         Write-Host "Initialising communication with API..."
         $api = [ApiHandle]::New($config) 
-        Write-Host "Opening Excel-Instance..."
+        Write-Host "Opening Excel-instance..."
         $excel = [ExcelHandle]::new($config.excel.filepath) 
     } catch {
         $Host.UI.WriteErrorLine($_.Exception.Message)
