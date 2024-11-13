@@ -14,16 +14,12 @@
 
 $DEFAULT_CONF_PATH = "$HOME\arcaignis.json"
 $TEST_PREFIX = "ArcaIgnis-Test---"
+$DELETE_ALL = $false
 
 # Utils
-function Join([Object[]]$arr, [String]$delim) {
-    foreach ($x in $arr) { if ($x) { $s += "$(if ($s) {$delim})$x" } }
-    return $s
-}
-
 function Format-Error {
     param ( [String]$message, [String]$cause, [String[]]$hints )
-    if ($cause) { $message += "`n| Caused by: " + (Join $cause.Split([Environment]::NewLine) "`n| ")}
+    if ($cause) { $message += "`n| Caused by: " + $cause.Split([Environment]::NewLine) -join "`n| "}
     foreach ($hint in $hints) { $message += "`n| ->> $hint" }
     return $message
 }
@@ -49,7 +45,7 @@ function Punct ([Int]$achieved, [Int]$total) {
 # Config
 function Assert-Format($x, [Hashtable]$format, $parent = $null) {
     foreach ($key in $format.Keys) {
-        $fullname = Join @( $parent, $key ) "."
+        $fullname = @($parent, $key) -join "."
         if ($null -eq $x.$key) { throw "Missing field '$fullname'" }
         Assert-Format $x.$key $format.$key $fullname
     }
@@ -168,7 +164,7 @@ class ExcelHandle {
         catch { throw Format-Error -Message "Sheet '$sheet_name' could not be opened" -Cause $_.Exception.Message }
         $cell = $sheet.Cells.Item($row_index, $output_column)
         if ($cell.Text -ne $value) {
-            $cell.Value = Join @($cell.Text, $value) ", "
+            $cell.Value = @($cell.Text, $value) -join ", "
             $cell.Font.Color = $color
         }
     }
@@ -467,8 +463,8 @@ function ConvertServergroupsData([Hashtable]$data, [ApiAction]$action) {
             groupType = "IPSET"
     }
 
-    $body["ipAddress"] = Join ( $data.addresses | ForEach-Object { Join @($_.address, $_.net) "/" } ) ", "
-    $comment = Join @((Join $data.servicerequest ", "), $data.hostname, $data.comment) " - "
+    $body["ipAddress"] = @($data.addresses | ForEach-Object { @($_.address, $_.net) -join "/" }) -join ", "
+    $comment = @(($data.servicerequest -join ", "), $data.hostname, $data.comment) -join " - "
     if ($comment) { $body["description"] = $comment }
     if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = "$name (IPSET)" }
     $body
@@ -511,7 +507,7 @@ function ConvertPortgroupsData([Hashtable]$data, [ApiAction]$action) {
         $i++
     }
 
-    $comment = Join @((Join $data.servicerequest ", "), $data.comment) " - "
+    $comment = @(($data.servicerequest -join ", "), $data.comment) -join " - "
     if ($comment) { $body["description"] = $comment }
     if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = $name }
     $body
@@ -519,7 +515,7 @@ function ConvertPortgroupsData([Hashtable]$data, [ApiAction]$action) {
 
 function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
     # TODO: Insert Jenkins ID instead of "LRAutomation"
-    $name = Join @($data.servicerequest, $data.index, "LRAutomation") "_"
+    $name = @($data.servicerequest, $data.index, "LRAutomation") -join "_"
     $name = "${TEST_PREFIX}$name"
     if ($action -eq [ApiAction]::Delete) {
         return @{
@@ -588,6 +584,7 @@ function Get-ServergroupsConfig([Hashtable]$config) {
         resource_name = "Security Group"
         sheet_name = $config.excel.sheetnames.servergroups
         catalog_id = $config.api.catalog_ids.servergroups
+        ddos_sleep_time = 1.0
         converter = {
             param ([hashtable]$data, [ApiAction]$action)
             ConvertServergroupsData $data $action
@@ -629,6 +626,7 @@ function Get-PortgroupsConfig([Hashtable]$config) {
         resource_name = "Service"
         sheet_name = $config.excel.sheetnames.portgroups
         catalog_id = $config.api.catalog_ids.portgroups
+        ddos_sleep_time = 1.0
         converter = {
             param ([Hashtable]$data, [ApiAction]$action)
             ConvertPortgroupsData $data $action 
@@ -701,6 +699,7 @@ function Get-RulesConfig([Hashtable]$config) {
         resource_name = "FW-Rule"
         sheet_name = $config.excel.sheetnames.rules
         catalog_id = $config.api.catalog_ids.rules
+        ddos_sleep_time = 1.2
         expander = {
             param([Hashtable]$data)
             ExpandRulesData $data
@@ -712,6 +711,7 @@ function Get-RulesConfig([Hashtable]$config) {
     }
 }
 
+# TODO: Refactor this to loop over a list of actions
 function HandleDataSheet {
     param (
         [ExcelHandle]$excel_handle,
@@ -752,7 +752,7 @@ function HandleDataSheet {
                 $excel.UpdateCreationStatus($sheet_config, $row_index, "Deployment Failed", $config.color.dploy_error)
             }
 
-            Start-Sleep 1 # Mandatory because of DDoS protection probably...
+            Start-Sleep $sheet_config.ddos_sleep_time # Mandatory because of DDoS protection probably...
         }
 
         $deployed
@@ -831,6 +831,20 @@ function HandleDataSheet {
         }
     }
 
+    # Delete!
+    if ($DELETE_ALL) {
+        [Hashtable[]]$deployed_delete = DeployRequests $parsed_data ([ApiAction]::Delete)
+        [Int]$num_deployed_delete = $deployed_delete.Length
+        Write-Host "$num_deployed_delete/$num_parsed deployed$(Punct $num_deployed_delete $num_parsed)"
+        if ($num_deployed_delete -eq 0) { PrematurelyDone; return }
+
+        [Int]$num_deleted = (AwaitDeployments $deployed_delete $true).num_successful
+        Write-Host "$num_deleted/$num_deployed_delete deleted successfully$(Punct $num_deleted $num_deployed_delete)"
+        Write-Host "Filled out creation status for $sheet_name."
+        return
+    }
+    
+
     # Deploy Creation Requests
     [Hashtable[]]$deployed_create = DeployRequests $parsed_data ([ApiAction]::Create)
     [Int]$num_deployed_create = $deployed_create.Length
@@ -876,12 +890,18 @@ function Main([String]$conf_path) {
         exit 666
     }
 
+    # $actions = @([ApiAction]::Create, [ApiAction]::Update)
+
+    $sheet_configs = @(
+        (Get-ServergroupsConfig $config)
+        (Get-PortgroupsConfig $config)
+        (Get-RulesConfig $config)
+    )
+
+    if ($DELETE_ALL) { [Array]::Reverse($sheet_configs) }
+
     try {
-        foreach ($sheet_config in @(
-            Get-ServergroupsConfig $config
-            Get-PortgroupsConfig $config
-            Get-RulesConfig $config
-        )) {
+        foreach ($sheet_config in $sheet_configs) {
             try { HandleDataSheet -excel_handle $excel -api_handle $api -sheet_config $sheet_config -config $config | Out-Null }
             catch { $Host.UI.WriteErrorLine($_.Exception.Message) }
         }
@@ -894,5 +914,7 @@ function Main([String]$conf_path) {
     Write-Host "Done!"
 }
 
-$conf_path = if($args[0]) {$args[0]} else {$DEFAULT_CONF_PATH}
+$conf_path = if ($args[0]) {$args[0]} else {$DEFAULT_CONF_PATH}
+# TODO: Use the second argument to control what actions are taken
+$DELETE_ALL = $args[1] -eq "DELETE"
 Main $conf_path
