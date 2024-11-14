@@ -52,14 +52,14 @@ function Punct ([Int]$achieved, [Int]$total) {
 }
 
 # Config
-function Assert-Format($x, [Hashtable]$format, $parent = $null) {
+function Assert-Format ($x, [Hashtable]$format, $parent = $null) {
     foreach ($key in $format.Keys) {
         $fullname = Join @($parent, $key) "."
         if ($null -eq $x.$key) { throw "Missing field '$fullname'" }
         Assert-Format $x.$key $format.$key $fullname
     }
 }
-function Get-Config([String]$conf_path) {
+function Get-Config ([String]$conf_path) {
     $config = Get-Content $conf_path | ConvertFrom-Json
     Assert-Format $config @{
         api = @{
@@ -114,7 +114,7 @@ class ExcelHandle {
     [__ComObject]$workbook
     [Bool]$should_close
     
-    ExcelHandle([String]$file_path) {
+    ExcelHandle ([String]$file_path) {
         try {
             $this.app = [Runtime.Interopservices.Marshal]::GetActiveObject('Excel.Application')
             foreach ($wb in $this.app.Workbooks) {
@@ -135,7 +135,7 @@ class ExcelHandle {
         $this.app.Visible = $false
     }
 
-    [Hashtable[]] GetSheetData([Hashtable]$sheet_config) {
+    [Hashtable[]] GetSheetData ([Hashtable]$sheet_config) {
         [String]$sheet_name = $sheet_config.sheet_name
         [Int]$output_column = $sheet_config.format.Length + 1
         try { $sheet = $this.workbook.Worksheets.Item($sheet_name) }
@@ -166,7 +166,7 @@ class ExcelHandle {
         return $data 
     }
 
-    [Void] UpdateCreationStatus([Hashtable]$sheet_config, [Int]$row_index, [String]$value, [Int]$color = 0) {
+    [Void] UpdateCreationStatus ([Hashtable]$sheet_config, [Int]$row_index, [String]$value, [Int]$color = 0) {
         [Int]$output_column = $sheet_config.format.Length + 1
         [String]$sheet_name = $sheet_config.sheet_name
         try { $sheet = $this.workbook.Worksheets.Item($sheet_name) }
@@ -178,7 +178,7 @@ class ExcelHandle {
         }
     }
     
-    [Void] Release() {
+    [Void] Release () {
         Write-Host "Releasing Excel-Instance..."
         $this.app.Visible = $this.initially_visible
         if ($this.should_close) {
@@ -203,7 +203,7 @@ class ApiHandle {
     [String]$url_deployments
     [String]$url_items
     
-    ApiHandle([Hashtable]$config) {
+    ApiHandle ([Hashtable]$config) {
         $this.url_deployments = $config.api.urls.deployments
         $this.url_items = $config.api.urls.items
         $username = $config.api.credentials.username
@@ -260,14 +260,14 @@ class ApiHandle {
         }
     }
 
-    [Object] Get([String]$url) {
+    [Object] Get ([String]$url) {
         return Invoke-RestMethod $url -Method Get -Headers $this.headers
     }
-    [Object] Post([String]$url, [Hashtable]$body) {
+    [Object] Post ([String]$url, [Hashtable]$body) {
         return Invoke-RestMethod $url -Method Post -ContentType "application/json" -Headers $this.headers -Body ($body | ConvertTo-Json)
     }
 
-    [String] Deploy([String]$name, [String]$catalog_id, [Hashtable]$inputs) {
+    [String] Deploy ([String]$name, [String]$catalog_id, [Hashtable]$inputs) {
         $body = @{
             deploymentName = $name
             projectId = $this.project_id
@@ -280,7 +280,7 @@ class ApiHandle {
         return $deployment_id
     }
 
-    [DeploymentStatus] CheckDeployment([String]$deployment_id) {
+    [DeploymentStatus] CheckDeployment ([String]$deployment_id) {
         $response = $this.Get("$($this.url_deployments)/$deployment_id")
         switch ($response.status) {
             "CREATE_INPROGRESS" { return [DeploymentStatus]::InProgress }
@@ -290,7 +290,7 @@ class ApiHandle {
         throw "Received invalid response: $($response | ConvertTo-Json)"
     }
 
-    [DeploymentStatus] WaitForDeployment([String]$deployment_id) {
+    [DeploymentStatus] WaitForDeployment ([String]$deployment_id) {
         $status = $null
         $complete = $false
         $wait_time = 0
@@ -553,7 +553,7 @@ function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
 }
 
 # Data Configs
-function Get-ServergroupsConfig([Hashtable]$config) {
+function Get-ServergroupsConfig ([Hashtable]$config) {
     @{
         format = @(
             @{
@@ -601,7 +601,7 @@ function Get-ServergroupsConfig([Hashtable]$config) {
     }
 }
 
-function Get-PortgroupsConfig([Hashtable]$config) {
+function Get-PortgroupsConfig ([Hashtable]$config) {
     @{
         format = @(
             @{
@@ -643,7 +643,7 @@ function Get-PortgroupsConfig([Hashtable]$config) {
     }
 }
 
-function Get-RulesConfig([Hashtable]$config) {
+function Get-RulesConfig ([Hashtable]$config) {
     @{
         format = @(
             @{
