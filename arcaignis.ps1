@@ -17,9 +17,14 @@ $TEST_PREFIX = "ArcaIgnis-Test---"
 $DELETE_ALL = $false
 
 # Utils
+function Join ([Object[]]$arr, [String]$delim) {
+    foreach ($x in $arr) { if ($x) { $s += "$(if ($s) {$delim})$x" } }
+    return $s
+}
+
 function Format-Error {
-    param ( [String]$message, [String]$cause, [String[]]$hints )
-    if ($cause) { $message += "`n| Caused by: " + $cause.Split([Environment]::NewLine) -join "`n| "}
+    param ([String]$message, [String]$cause, [String[]]$hints)
+    if ($cause) { $message += "`n| Caused by: " + (Join $cause.Split([Environment]::NewLine) "`n| ")}
     foreach ($hint in $hints) { $message += "`n| ->> $hint" }
     return $message
 }
@@ -32,11 +37,15 @@ function ShowPercentage ([Int]$i, [Int]$total) {
     Write-Host -NoNewline "...$([Math]::Floor(($i * 100 + 50) / $total))%`r"
 }
 
+function Plural_by ([Int]$number, [String]$singular = "", [String]$plural = "s") {
+    if ($number -eq 1) { $singular } else { $plural }
+}
+
 function Punct ([Int]$achieved, [Int]$total) {
     if ($achieved -gt $total) { return "!? >:O"}
     if ($total -eq 0) { return "." }
     [Float]$ratio = $achieved / $total
-        if ($ratio -eq 1.00) {"! :D" }
+        if ($ratio -eq 1.00) { "! :D" }
     elseif ($ratio -ge 0.75) { ". :)" }
     elseif ($ratio -ge 0.25) { " :/" }
     else                     { "... :(" }
@@ -45,7 +54,7 @@ function Punct ([Int]$achieved, [Int]$total) {
 # Config
 function Assert-Format($x, [Hashtable]$format, $parent = $null) {
     foreach ($key in $format.Keys) {
-        $fullname = @($parent, $key) -join "."
+        $fullname = Join @($parent, $key) "."
         if ($null -eq $x.$key) { throw "Missing field '$fullname'" }
         Assert-Format $x.$key $format.$key $fullname
     }
@@ -164,7 +173,7 @@ class ExcelHandle {
         catch { throw Format-Error -Message "Sheet '$sheet_name' could not be opened" -Cause $_.Exception.Message }
         $cell = $sheet.Cells.Item($row_index, $output_column)
         if ($cell.Text -ne $value) {
-            $cell.Value = @($cell.Text, $value) -join ", "
+            $cell.Value = Join @($cell.Text, $value) ", "
             $cell.Font.Color = $color
         }
     }
@@ -320,7 +329,7 @@ function ParseDataSheet {
         $regex_info = $format[$i]["regex_info"]
         $regex = if ($format[$i]["regex"]) { $format[$i]["regex"] } else { ".*" } # Match anything if no regex is provided
 
-        function PerElementOperations([String]$value) {
+        function PerElementOperations ([String]$value) {
             if (-not [Regex]::IsMatch($value, "^$regex$")) {
                 throw "Invalid ${dbg_name}: row $row, column ${col}: '$value'$(if ($regex_info) { " - $regex_info" })"
             }
@@ -338,7 +347,7 @@ function ParseDataSheet {
             else { throw "Missing ${dbg_name}: row $row, column $col" }
         }
 
-        if($format[$i]["is_unique"] -and $unique_check) {
+        if ($format[$i]["is_unique"] -and $unique_check) {
             if ($unique_check[$field_name]) {
                 if ($unique_check[$field_name][$value]) {
                     throw "Duplicate ${dbg_name}: row $row, column ${col}: '$value' was already used"
@@ -350,7 +359,7 @@ function ParseDataSheet {
             }
         }
 
-        $value = if($format[$i]["is_array"]) {
+        $value = if ($format[$i]["is_array"]) {
             $value.Split([Environment]::NewLine) | ForEach-Object { PerElementOperations $_.Trim() }
         } else {
             PerElementOperations $value
@@ -368,7 +377,7 @@ function ParseDataSheet {
 
 
 # Sub- and Post-Parsers
-function ParseIP([String]$raw_input) {
+function ParseIP ([String]$raw_input) {
     # This function expects a prevalidated ipv4 address
     # Either with or without CIDR
     # u8.u8.u8.u8 | u8.u8.u8.u8/cidr
@@ -381,7 +390,7 @@ function ParseIP([String]$raw_input) {
     $ip
 }
 
-function ParsePort([String]$raw_input) {
+function ParsePort ([String]$raw_input) {
     # This function expects a prevalidated word:port pair
     # Either with a single port address or a range
     # word:port | word:start-end
@@ -415,7 +424,7 @@ function ParsePort([String]$raw_input) {
     $port
 }
 
-function ParseArrayWithAny([String[]]$array) {
+function ParseArrayWithAny ([String[]]$array) {
     # This function
     # - returns the input array if it doesn't include "any"
     # - returns an empty array when the input is `@("any")` (case insensitive)
@@ -430,7 +439,7 @@ function ParseArrayWithAny([String[]]$array) {
 }
 
 # Expanders and Converters
-function ExpandRulesData([Hashtable]$data_packet) {
+function ExpandRulesData ([Hashtable]$data_packet) {
     $gateways = @()
     $data = $data_packet.data
     if ($data.t0_internet) { $gateways += "T0 Internet" }
@@ -448,12 +457,12 @@ enum ApiAction {
     Delete
 }
 
-function ConvertServergroupsData([Hashtable]$data, [ApiAction]$action) {
+function ConvertServergroupsData ([Hashtable]$data, [ApiAction]$action) {
     $name = "$TEST_PREFIX$($data.name)"
     if ($action -eq [ApiAction]::Delete) {
         return @{
             action = "$action"
-            elementsToDelete = @( "$name (IPSET)" )
+            elementsToDelete = @("$name (IPSET)")
         }
     }
 
@@ -463,14 +472,14 @@ function ConvertServergroupsData([Hashtable]$data, [ApiAction]$action) {
             groupType = "IPSET"
     }
 
-    $body["ipAddress"] = @($data.addresses | ForEach-Object { @($_.address, $_.net) -join "/" }) -join ", "
-    $comment = @(($data.servicerequest -join ", "), $data.hostname, $data.comment) -join " - "
+    $body["ipAddress"] = Join @($data.addresses | ForEach-Object { Join @($_.address, $_.net) "/" }) ", "
+    $comment = Join @((Join $data.servicerequest ", "), $data.hostname, $data.comment) " - "
     if ($comment) { $body["description"] = $comment }
     if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = "$name (IPSET)" }
     $body
 }
 
-function ConvertPortgroupsData([Hashtable]$data, [ApiAction]$action) {
+function ConvertPortgroupsData ([Hashtable]$data, [ApiAction]$action) {
     $name = "$TEST_PREFIX$($data.name)"
     if ($action -eq [ApiAction]::Delete) {
         return @{
@@ -507,7 +516,7 @@ function ConvertPortgroupsData([Hashtable]$data, [ApiAction]$action) {
         $i++
     }
 
-    $comment = @(($data.servicerequest -join ", "), $data.comment) -join " - "
+    $comment = Join @((Join $data.servicerequest ", "), $data.comment) " - "
     if ($comment) { $body["description"] = $comment }
     if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = $name }
     $body
@@ -515,7 +524,7 @@ function ConvertPortgroupsData([Hashtable]$data, [ApiAction]$action) {
 
 function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
     # TODO: Insert Jenkins ID instead of "LRAutomation"
-    $name = @($data.servicerequest, $data.index, "LRAutomation") -join "_"
+    $name = Join @($data.servicerequest, $data.index, "LRAutomation") "_"
     $name = "${TEST_PREFIX}$name"
     if ($action -eq [ApiAction]::Delete) {
         return @{
@@ -530,12 +539,12 @@ function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
         name = $name
         gateway = $data.gateway
         firewallAction = "Allow"
-        sourceType = if($data.sources.Length) { "Group" } else { "Any" }
-        destinationType = if($data.destinations.Length) { "Group" } else { "Any" }
-        serviceType = if($data.services.Length) { "Service" } else { "Any" }
-        sources = @( $data.sources | ForEach-Object { "${TEST_PREFIX}$_ (IPSET)" } )
-        destinations = @( $data.destinations | ForEach-Object { "${TEST_PREFIX}$_ (IPSET)" } )
-        services = @( $data.services | ForEach-Object { "${TEST_PREFIX}$_" } )
+        sourceType = if ($data.sources.Length) { "Group" } else { "Any" }
+        destinationType = if ($data.destinations.Length) { "Group" } else { "Any" }
+        serviceType = if ($data.services.Length) { "Service" } else { "Any" }
+        sources = @($data.sources | ForEach-Object { "${TEST_PREFIX}$_ (IPSET)" })
+        destinations = @($data.destinations | ForEach-Object { "${TEST_PREFIX}$_ (IPSET)" })
+        services = @($data.services | ForEach-Object { "${TEST_PREFIX}$_" })
     }
 
     if ($data.comment) { $body["comment"] = $data.comment }
@@ -586,7 +595,7 @@ function Get-ServergroupsConfig([Hashtable]$config) {
         catalog_id = $config.api.catalog_ids.servergroups
         ddos_sleep_time = 1.0
         converter = {
-            param ([hashtable]$data, [ApiAction]$action)
+            param ([Hashtable]$data, [ApiAction]$action)
             ConvertServergroupsData $data $action
         }
     }
@@ -701,7 +710,7 @@ function Get-RulesConfig([Hashtable]$config) {
         catalog_id = $config.api.catalog_ids.rules
         ddos_sleep_time = 1.2
         expander = {
-            param([Hashtable]$data)
+            param ([Hashtable]$data)
             ExpandRulesData $data
         }
         converter = {
@@ -728,11 +737,11 @@ function HandleDataSheet {
         Write-Host "Nothing more to do!"
     }
 
-    function DeployRequests([Hashtable[]]$input_data, [ApiAction]$action) {
+    function DeployRequests ([Hashtable[]]$input_data, [ApiAction]$action) {
         [Int]$num_data = $input_data.Length
         [Hashtable[]]$deployed = @()
 
-        Write-Host "Deploying $num_data $action-$(if($num_data -eq 1) {"request"} else {"requests"})..."
+        Write-Host "Deploying $num_data ${action}-request$(Plural_by $num_data)..."
         for ($i = 0; $i -lt $num_data; $i++) {
             ShowPercentage $i $num_data
             $row_index = $input_data[$i].row_index
@@ -758,12 +767,12 @@ function HandleDataSheet {
         $deployed
     }
 
-    function AwaitDeployments([Hashtable[]]$input_data, [Bool]$last_chance) {
+    function AwaitDeployments ([Hashtable[]]$input_data, [Bool]$last_chance) {
         [Hashtable[]]$reattempt = @()
         [Int]$num_deployed = $input_data.Length
         [Int]$num_successful = 0
 
-        Write-Host "Waiting for status of $num_deployed $(if($num_deployed -eq 1) {"deployment"} else {"deployments"})..."
+        Write-Host "Waiting for status of $num_deployed deployment$(Plural_by $num_deployed)..."
         for ($i = 0; $i -lt $num_deployed; $i++) {
             ShowPercentage $i $num_deployed
             $deployment = $input_data[$i]
@@ -802,7 +811,7 @@ function HandleDataSheet {
     [Hashtable[]]$parsed_data = @()
     [Int]$num_parsed
 
-    Write-Host "Parsing data for $num_data $(if($num_data -eq 1) {"resource"} else {"resources"})..."
+    Write-Host "Parsing data for $num_data resource$(Plural_by $num_data)..."
     for ($i = 0; $i -lt $num_data; $i++) {
     ShowPercentage $i $num_data
         $data = $raw_data[$i]
@@ -860,8 +869,8 @@ function HandleDataSheet {
     if ($num_to_update -eq 0) { PrematurelyDone; return }
 
     # Deploy Update Requests
-    Write-Host "The failed $(if ($num_to_update -eq 1) {"resource"} else {"resources"}) might already exist."
-    Write-Host "I'll attempt to update $(if ($num_to_update -eq 1) {"it"} else {"them"}) instead."
+    Write-Host "The failed resource$(Plural_by $num_to_update) might already exist."
+    Write-Host "I'll attempt to update $(Plural_by $num_to_update "it" "them") instead."
     [Hashtable[]]$deployed_update = DeployRequests $to_update ([ApiAction]::Update)
     [Int]$num_deployed_update = $deployed_update.Length
     Write-Host "$num_deployed_update/$num_to_update deployed$(Punct $num_deployed_update $num_to_update)"
@@ -873,7 +882,7 @@ function HandleDataSheet {
     Write-Host "Filled out creation status for $sheet_name."
 }
 
-function Main([String]$conf_path) {
+function Main ([String]$conf_path) {
     # very dangerously disabling validating certification
     [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
 
@@ -914,7 +923,7 @@ function Main([String]$conf_path) {
     Write-Host "Done!"
 }
 
-$conf_path = if ($args[0]) {$args[0]} else {$DEFAULT_CONF_PATH}
+$conf_path = if ($args[0]) { $args[0] } else { $DEFAULT_CONF_PATH }
 # TODO: Use the second argument to control what actions are taken
 $DELETE_ALL = $args[1] -eq "DELETE"
 Main $conf_path
