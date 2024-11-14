@@ -59,6 +59,7 @@ function Assert-Format ($x, [Hashtable]$format, $parent = $null) {
         Assert-Format $x.$key $format.$key $fullname
     }
 }
+
 function Get-Config ([String]$conf_path) {
     $config = Get-Content $conf_path | ConvertFrom-Json
     Assert-Format $config @{
@@ -108,7 +109,19 @@ function Get-Config ([String]$conf_path) {
     }
 }
 
-# Handles
+# Enums and Classes
+enum DeploymentStatus {
+    InProgress
+    Successful
+    Failed
+}
+
+enum ApiAction {
+    Create
+    Update
+    Delete
+}
+
 class ExcelHandle {
     [__ComObject]$app
     [__ComObject]$workbook
@@ -220,7 +233,7 @@ class ApiHandle {
             $refresh_token = $response.refresh_token
         } catch {
             throw Format-Error -Message "Failed to obtain refresh token!" -Cause $_.Exception.Message -Hints @(
-                "Assure that you're connected to the Admin-LAN"
+                "Ensure that you're connected to the Admin-LAN"
                 "Ensure your username and password are valid"
             )
         }
@@ -302,11 +315,6 @@ class ApiHandle {
         }
         return $status
     }
-}
-enum DeploymentStatus {
-    InProgress
-    Successful
-    Failed
 }
 
 function ParseDataSheet {
@@ -451,12 +459,6 @@ function ExpandRulesData ([Hashtable]$data_packet) {
     }
 }
 
-enum ApiAction {
-    Create
-    Update
-    Delete
-}
-
 function ConvertServergroupsData ([Hashtable]$data, [ApiAction]$action) {
     $name = "$TEST_PREFIX$($data.name)"
     if ($action -eq [ApiAction]::Delete) {
@@ -561,14 +563,14 @@ function Get-ServergroupsConfig ([Hashtable]$config) {
                 field_name = "name"
                 regex = $config.regex.groupname
                 is_unique = $true
-            },
+            }
             @{
                 dbg_name = "IP-Address"
                 field_name = "addresses"
                 regex = $config.regex.ip_cidr
                 is_array = $true
                 subparser = "ParseIP"
-            },
+            }
             @{
                 dbg_name = "Host Name"
                 field_name = "hostname"
@@ -609,19 +611,19 @@ function Get-PortgroupsConfig ([Hashtable]$config) {
                 field_name = "name"
                 regex = $config.regex.groupname
                 is_unique = $true
-            },
+            }
             @{
                 dbg_name = "Port"
                 field_name = "ports"
                 regex = $config.regex.port
                 subparser = "ParsePort"
                 is_array = $true
-            },
+            }
             @{
                 dbg_name = "Comment"
                 field_name = "comment"
                 is_optional = $true
-            },
+            }
             @{
                 dbg_name = "NSX-Servicerequest"
                 field_name = "servicerequest"
@@ -651,7 +653,7 @@ function Get-RulesConfig ([Hashtable]$config) {
                 field_name = "index"
                 regex = "[0-9]+"
                 is_unique = $true
-            },
+            }
             @{
                 dbg_name = "NSX-Source"
                 field_name = "sources"
@@ -659,7 +661,7 @@ function Get-RulesConfig ([Hashtable]$config) {
                 regex_info = "Please use a Security Group Name or 'any'"
                 postparser = "ParseArrayWithAny"
                 is_array = $true
-            },
+            }
             @{
                 dbg_name = "NSX-Destination"
                 field_name = "destinations"
@@ -667,7 +669,7 @@ function Get-RulesConfig ([Hashtable]$config) {
                 regex_info = "Please use a Security Group Name or 'any'"
                 postparser = "ParseArrayWithAny"
                 is_array = $true
-            },
+            }
             @{
                 dbg_name = "NSX-Ports"
                 field_name = "services"
@@ -675,12 +677,12 @@ function Get-RulesConfig ([Hashtable]$config) {
                 regex_info = "Please use a Service Name or 'any'"
                 postparser = "ParseArrayWithAny"
                 is_array = $true
-            },
+            }
             @{
                 dbg_name = "NSX-Description"
                 field_name = "comment"
                 is_optional = $true
-            },
+            }
             @{
                 dbg_name = "NSX-Servicerequest"
                 field_name = "servicerequest"
@@ -688,17 +690,17 @@ function Get-RulesConfig ([Hashtable]$config) {
                 # TODO: Should this be optional?
                 is_optional = $true
                 is_array = $true
-            },
+            }
             @{
                 dbg_name = "NSX-Customer FW"
                 field_name = "customer_fw"
                 is_optional = $true
-            },
+            }
             @{
                 dbg_name = "T1 Payload"
                 field_name = "t1_payload"
                 is_optional = $true
-            },
+            }
             @{
                 dbg_name = "T0 Internet"
                 field_name = "t0_internet"
