@@ -14,10 +14,10 @@
 
 $DEFAULT_CONF_PATH = "$HOME\arcaignis.json"
 $TEST_PREFIX = "ArcaIgnis-Test---"
-$DELETE_ALL = $false
 
 # Utils
 function Join ([Object[]]$arr, [String]$delim) {
+    [String]$s = ""
     foreach ($x in $arr) { if ($x) { $s += "$(if ($s) {$delim})$x" } }
     return $s
 }
@@ -37,18 +37,19 @@ function ShowPercentage ([Int]$i, [Int]$total) {
     Write-Host -NoNewline "...$([Math]::Floor(($i * 100 + 50) / $total))%`r"
 }
 
-function Plural_by ([Int]$number, [String]$singular = "", [String]$plural = "s") {
+function PluralityIn ([Int]$number, [String]$singular = "", [String]$plural = "s") {
     if ($number -eq 1) { $singular } else { $plural }
 }
 
-function Punct ([Int]$achieved, [Int]$total) {
-    if ($achieved -gt $total) { return "!? >:O"}
-    if ($total -eq 0) { return "." }
-    [Float]$ratio = $achieved / $total
-        if ($ratio -eq 1.00) { "! :D" }
-    elseif ($ratio -ge 0.75) { ". :)" }
-    elseif ($ratio -ge 0.25) { " :/" }
-    else                     { "... :(" }
+function Punctuate ([Int]$achieved, [Int]$total) {
+    if ($achieved -gt $total -or $achieved -lt 0) { return "!? >:O"} # Impossible case
+    if ($total -eq 0) { return "." }                                 # 0/0 case
+
+    [Float]$ratio = [Math]::Round($achieved / $total, 2)
+    if ($ratio -eq 1.00)     { return "! :D" }
+    elseif ($ratio -ge 0.75) { return ". :)" }
+    elseif ($ratio -ge 0.25) { return " :/" }
+    else                     { return "... :(" }
 }
 
 # Config
@@ -98,8 +99,8 @@ function Get-Config ([String]$conf_path) {
             groupname = "[A-Za-z0-9_-]+"
             servicerequest = "[A-Za-z0-9_-]+"
             ip_addr = $regex_ip
-            ip_cidr = "$regex_ip(/$regex_cidr)?"      # ip or ip/cidr
-            port = "[A-Za-z]+\s*:\s*$regex_u16_range" # word:u16-range - protocols checked in `ParsePort`
+            ip_cidr = "$regex_ip(/$regex_cidr)?"         # ip or ip/cidr
+            port = "[A-Za-z0-9]+\s*:\s*$regex_u16_range" # word:u16-range - protocols checked in `ParsePort`
         }
         color = @{
             parse_error = 255 # Red
@@ -409,7 +410,7 @@ function ParsePort ([String]$raw_input) {
     $split_input = $raw_input.Split(":")
     $protocol = $split_input[0].Trim().ToUpper()
 
-    if ($protocol -in @("ICMP", "ICMPV4", "ICMPV6")) {
+    if ($protocol -in @("ICMP", "ICMP4", "ICMPV4", "ICMP6", "ICMPV6")) {
         throw "Protocol $protocol not supported - Please use default ICMP services (i.e. 'ICMP ALL' or 'ICMP Echo Request')"
     }
     if ($protocol -notin @("TCP", "UDP")) {
@@ -722,83 +723,19 @@ function Get-RulesConfig ([Hashtable]$config) {
     }
 }
 
-# TODO: Refactor this to loop over a list of actions
 function HandleDataSheet {
     param (
         [ExcelHandle]$excel_handle,
         [ApiHandle]$api_handle,
         [Hashtable]$sheet_config,
-        [Hashtable]$config
+        [Hashtable]$config,
+        [ApiAction[]]$actions
     )
 
     [String]$sheet_name = $sheet_config.sheet_name
-
-    # Helper functions
-    function PrematurelyDone {
+    function NothingMoreToDo {
         Write-Host "Filled out creation status for $sheet_name."
         Write-Host "Nothing more to do!"
-    }
-
-    function DeployRequests ([Hashtable[]]$input_data, [ApiAction]$action) {
-        [Int]$num_data = $input_data.Length
-        [Hashtable[]]$deployed = @()
-
-        Write-Host "Deploying $num_data ${action}-request$(Plural_by $num_data)..."
-        for ($i = 0; $i -lt $num_data; $i++) {
-            ShowPercentage $i $num_data
-            $row_index = $input_data[$i].row_index
-            $data = $input_data[$i].data
-            $deployment_name = "$action $($sheet_config.resource_name) - $(Get-Date -UFormat %s -Millisecond 0) - LR Automation"
-
-            try {
-                $inputs = & $sheet_config.converter -data $data -action $action
-                $deployed += @{
-                    id = $api_handle.Deploy($deployment_name, $sheet_config.catalog_id, $inputs)
-                    row_index = $row_index
-                    preconverted = $data
-                    action = $action
-                }
-            } catch {
-                $Host.UI.WriteErrorLine("->> Deploy error in ${sheet_name}: $($_.Exception.Message)")
-                $excel.UpdateCreationStatus($sheet_config, $row_index, "Deployment Failed", $config.color.dploy_error)
-            }
-
-            Start-Sleep $sheet_config.ddos_sleep_time # Mandatory because of DDoS protection probably...
-        }
-
-        $deployed
-    }
-
-    function AwaitDeployments ([Hashtable[]]$input_data, [Bool]$last_chance) {
-        [Hashtable[]]$reattempt = @()
-        [Int]$num_deployed = $input_data.Length
-        [Int]$num_successful = 0
-
-        Write-Host "Waiting for status of $num_deployed deployment$(Plural_by $num_deployed)..."
-        for ($i = 0; $i -lt $num_deployed; $i++) {
-            ShowPercentage $i $num_deployed
-            $deployment = $input_data[$i]
-            $action = $deployment.action
-            $row_index = $deployment.row_index
-            $status = $api.WaitForDeployment($deployment.id)
-            if ($status -eq [DeploymentStatus]::Successful) {
-                $num_successful++
-                $excel.UpdateCreationStatus($sheet_config, $row_index, "$action Successful", $config.color.success)
-            } elseif ($last_chance) {
-                $Host.UI.WriteErrorLine("->> Creation and attempted update of resource at row $row_index in $sheet_name failed")
-                $excel.UpdateCreationStatus($sheet_config, $row_index, "Create/Update Failed", $config.color.dploy_error)
-            } else {
-                $reattempt += @{
-                    data = $deployment.preconverted
-                    row_index = $deployment.row_index
-                }
-            }
-        }
-
-        @{
-            reattempt = $reattempt
-            num_successful = $num_successful
-        }
     }
 
     # Get Raw Data
@@ -809,123 +746,169 @@ function HandleDataSheet {
     if ($num_data -eq 0) { Write-Host "Nothing to do!"; return }
 
     # Parse Data
-    [Hashtable]$unique_check = @{}
-    [Hashtable[]]$parsed_data = @()
-    [Int]$num_parsed
-
-    Write-Host "Parsing data for $num_data resource$(Plural_by $num_data)..."
+    [Hashtable]$unique_check_map = @{}
+    [Hashtable[]]$to_deploy = @()
+    Write-Host "Parsing data for $num_data resource$(PluralityIn $num_data)..."
     for ($i = 0; $i -lt $num_data; $i++) {
-    ShowPercentage $i $num_data
-        $data = $raw_data[$i]
+        ShowPercentage $i $num_data
+        [Hashtable]$data = $raw_data[$i]
 
         try {
-            $parsed_data += @{
-                data = ParseDataSheet -data $data -format $sheet_config.format -unique_check $unique_check
+            $to_deploy += @{
+                data = ParseDataSheet -data $data -format $sheet_config.format -unique_check $unique_check_map
                 row_index = $data.row_index
             }
         } catch {
             $err_message = $_.Exception.Message
             $Host.UI.WriteErrorLine("->> Parse error in ${sheet_name}: $err_message")
-            $excel.UpdateCreationStatus($sheet_config, $data.row_index, $err_message.Split(":")[0], $config.color.parse_error)
+            $excel_handle.UpdateCreationStatus($sheet_config, $data.row_index, $err_message.Split(":")[0], $config.color.parse_error)
         }
     }
-    $num_parsed = $parsed_data.Length
-    Write-Host "$num_parsed/$num_data parsed successfully$(Punct $num_parsed $num_data)"
-    if ($num_parsed -eq 0) { PrematurelyDone; return }
+
+    [Int]$num_to_deploy = $to_deploy.Length
+    Write-Host "$num_to_deploy/$num_data parsed successfully$(Punctuate $num_to_deploy $num_data)"
+    if ($num_to_deploy -eq 0) { NothingMoreToDo; return }
 
     # Expand Data
     if ($sheet_config.expander) {
-        $parsed_data = $parsed_data | ForEach-Object { & $sheet_config.expander -data $_ }
-        if ($parsed_data.Length -gt $num_parsed) {
-            $num_parsed = $parsed_data.Length
-            Write-Host "Expanded to data for $num_parsed API calls!"
+        $to_deploy = $to_deploy | ForEach-Object { & $sheet_config.expander -data $_ }
+        if ($to_deploy.Length -gt $num_to_deploy) {
+            $num_to_deploy = $to_deploy.Length
+            Write-Host "Expanded data to $num_to_deploy API calls!"
         }
     }
 
-    # Delete!
-    if ($DELETE_ALL) {
-        [Hashtable[]]$deployed_delete = DeployRequests $parsed_data ([ApiAction]::Delete)
-        [Int]$num_deployed_delete = $deployed_delete.Length
-        Write-Host "$num_deployed_delete/$num_parsed deployed$(Punct $num_deployed_delete $num_parsed)"
-        if ($num_deployed_delete -eq 0) { PrematurelyDone; return }
+    [String]$last_action = $null
+    foreach ($action in $actions) {
+        [String]$action_verb = "$action".ToLower()
+        if ($last_action) {
+            [String]$adverb = if ("$action" -eq $last_action) { "again" } else { "instead" }
+            Write-Host "I'll attempt to $action_verb the failed resource$(PluralityIn $num_to_deploy) $adverb."
+        }
 
-        [Int]$num_deleted = (AwaitDeployments $deployed_delete $true).num_successful
-        Write-Host "$num_deleted/$num_deployed_delete deleted successfully$(Punct $num_deleted $num_deployed_delete)"
-        Write-Host "Filled out creation status for $sheet_name."
-        return
+        $last_action = "$action"
+
+        # Deploy requests
+        [Hashtable[]]$deployed = @()
+        Write-Host "Deploying $num_to_deploy ${action}-request$(PluralityIn $num_to_deploy)..."
+        for ($i = 0; $i -lt $num_to_deploy; $i++) {
+            ShowPercentage $i $num_to_deploy
+            [Hashtable]$data = $to_deploy[$i].data
+            [String]$deployment_name = "$action $($sheet_config.resource_name) - $(Get-Date -UFormat %s -Millisecond 0) - LR Automation"
+
+            try {
+                [Hashtable]$inputs = & $sheet_config.converter -data $data -action $action
+                $deployed += @{
+                    id = $api_handle.Deploy($deployment_name, $sheet_config.catalog_id, $inputs)
+                    row_index = $to_deploy[$i].row_index 
+                    preconverted = $data
+                }
+            } catch {
+                $Host.UI.WriteErrorLine("->> Deploy error in ${sheet_name}: $($_.Exception.Message)")
+                $excel_handle.UpdateCreationStatus($sheet_config, $to_deploy[$i].row_index, "Deployment Failed", $config.color.dploy_error)
+            }
+
+            Start-Sleep $sheet_config.ddos_sleep_time # Mandatory because of DDoS protection probably
+        }
+        
+        [Int]$num_deployed = $deployed.Length
+        Write-Host "$num_deployed/$num_to_deploy deployed$(Punctuate $num_deployed $num_to_deploy)"
+        if ($num_deployed -eq 0) { NothingMoreToDo; return }
+
+        # Await Deployments
+        $to_deploy = @()
+        Write-Host "Waiting for status of $num_deployed deployment$(PluralityIn $num_deployed)..."
+        for ($i = 0; $i -lt $num_deployed; $i++) {
+            ShowPercentage $i $num_deployed
+            [Hashtable]$deployment = $deployed[$i]
+            [DeploymentStatus]$status = $api_handle.WaitForDeployment($deployment.id)
+
+            if ($status -eq [DeploymentStatus]::Successful) {
+                $excel_handle.UpdateCreationStatus($sheet_config, $deployment.row_index, "$action Successful", $config.color.success)
+            } else {
+                $to_deploy += @{
+                    data = $deployment.preconverted
+                    row_index = $deployment.row_index
+                }
+            }
+        }
+
+        $num_to_deploy = $to_deploy.Length
+        [Int]$num_successful = $num_deployed - $num_to_deploy
+        Write-Host "$num_successful/$num_deployed ${action_verb}d successfully$(Punctuate $num_successful $num_deployed)"
+        if ($num_to_deploy -eq 0) { NothingMoreToDo; return }
     }
-    
 
-    # Deploy Creation Requests
-    [Hashtable[]]$deployed_create = DeployRequests $parsed_data ([ApiAction]::Create)
-    [Int]$num_deployed_create = $deployed_create.Length
-    Write-Host "$num_deployed_create/$num_parsed deployed$(Punct $num_deployed_create $num_parsed)"
-    if ($num_deployed_create -eq 0) { PrematurelyDone; return }
+    [String]$actions_str = Join @($actions | ForEach-Object { "$_" }) "/"
+    [String]$requests_str = "$actions_str-request$(PluralityIn $actions.Length)"
+    foreach ($failed in $to_deploy) {
+        $row_index = $failed.row_index
+        $Host.UI.WriteErrorLine("->> $requests_str for resource at row $row_index in $sheet_name failed")
+        $excel_handle.UpdateCreationStatus($sheet_config, $row_index, "$actions_str Failed", $config.color.dploy_error)
+    }
 
-    # Wait For Create-Deployments
-    [Hashtable]$await_result = AwaitDeployments $deployed_create
-    [Int]$num_created = $await_result.num_successful
-    [Hashtable[]]$to_update = $await_result.reattempt
-    [Int]$num_to_update = $to_update.Length
-    Write-Host "$num_created/$num_deployed_create created successfully$(Punct $num_created $num_deployed_create)"
-    if ($num_to_update -eq 0) { PrematurelyDone; return }
-
-    # Deploy Update Requests
-    Write-Host "The failed resource$(Plural_by $num_to_update) might already exist."
-    Write-Host "I'll attempt to update $(Plural_by $num_to_update "it" "them") instead."
-    [Hashtable[]]$deployed_update = DeployRequests $to_update ([ApiAction]::Update)
-    [Int]$num_deployed_update = $deployed_update.Length
-    Write-Host "$num_deployed_update/$num_to_update deployed$(Punct $num_deployed_update $num_to_update)"
-    if ($num_deployed_update -eq 0) { PrematurelyDone; return }
-
-    # Wait For Update-Deployments
-    [Int]$num_updated = (AwaitDeployments $deployed_update $true).num_successful
-    Write-Host "$num_updated/$num_deployed_update updated successfully$(Punct $num_updated $num_deployed_update)"
-    Write-Host "Filled out creation status for $sheet_name."
+    NothingMoreToDo
 }
 
-function Main ([String]$conf_path) {
-    # very dangerously disabling validating certification
-    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-
-    try {
-        Write-Host "Loading config from $conf_path..."
-        $config = Get-Config $conf_path 
-        Write-Host "Initialising communication with API..."
-        $api = [ApiHandle]::New($config) 
-        Write-Host "Opening Excel-instance..."
-        $excel = [ExcelHandle]::new($config.excel.filepath) 
-    } catch {
-        $Host.UI.WriteErrorLine($_.Exception.Message)
-        if ($excel) { $excel.Release() }
-        exit 666
-    }
-
-    # $actions = @([ApiAction]::Create, [ApiAction]::Update)
-
-    $sheet_configs = @(
+function Main ([String]$conf_path, [String]$specific_action = "") {
+    Write-Host "Loading config from $conf_path..."
+    [Hashtable]$config = Get-Config $conf_path # might throw
+    [Hashtable[]]$sheet_configs = @(
         (Get-ServergroupsConfig $config)
         (Get-PortgroupsConfig $config)
         (Get-RulesConfig $config)
     )
 
-    if ($DELETE_ALL) { [Array]::Reverse($sheet_configs) }
+    [ApiAction[]]$default_actions = @([ApiAction]::Create, [ApiAction]::Update)
+    [ApiAction[]]$actions = switch ($specific_action.ToLower()) {
+        ""       { $default_actions }
+        "double" { $default_actions | ForEach-Object { @($_, $_) } }
+        "triple" { $default_actions | ForEach-Object { @($_, $_, $_) } }
+        "create" { @([ApiAction]::Create) }
+        "update" { @([ApiAction]::Update) }
+        "delete" {
+            [Array]::Reverse($sheet_configs)
+            @([ApiAction]::Delete)
+        }
+
+        default {
+            throw Format-Error -Message "Failed to parse specified action" -Hints @(
+                "'$specific_action' is not a valid request-action"
+                "Please use 'create', 'update' or 'delete'"
+                "Leave blank to attempt both create and update requests"
+            )
+        }
+    }
+
+    Write-Host "Initialising communication with API..."
+    # very dangerously disabling validating certification
+    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+    [ApiHandle]$api_handle = [ApiHandle]::New($config) # might throw
+
+    Write-Host "Opening Excel-instance..."
+    [ExcelHandle]$excel_handle = [ExcelHandle]::New($config.excel.filepath) # might throw
 
     try {
         foreach ($sheet_config in $sheet_configs) {
-            try { HandleDataSheet -excel_handle $excel -api_handle $api -sheet_config $sheet_config -config $config | Out-Null }
+            $handle_datasheet_params = @{
+                excel_handle = $excel_handle
+                api_handle = $api_handle
+                sheet_config = $sheet_config
+                config = $config
+                actions = $actions
+            }
+
+            try { HandleDataSheet @handle_datasheet_params | Out-Null }
             catch { $Host.UI.WriteErrorLine($_.Exception.Message) }
         }
-    }
-    finally {
+    } finally {
         PrintDivider
-        $excel.Release()
+        $excel_handle.Release()
     }
-    
-    Write-Host "Done!"
 }
 
 $conf_path = if ($args[0]) { $args[0] } else { $DEFAULT_CONF_PATH }
-# TODO: Use the second argument to control what actions are taken
-$DELETE_ALL = $args[1] -eq "DELETE"
-Main $conf_path
+$specific_action = $args[1]
+try { Main $conf_path $specific_action }
+catch { $Host.UI.WriteErrorLine($_.Exception.Message); exit 666 }
+Write-Host "Done!"
