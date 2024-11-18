@@ -52,6 +52,16 @@ function Punctuate ([Int]$achieved, [Int]$total) {
     else                     { return "... :(" }
 }
 
+function DeepCopy ([Hashtable]$source) {
+   $copy = @{}
+   foreach ($key in $source.Keys) {
+    $value = $source[$key]
+    if ($value -is [Hashtable]) { $copy[$key] = DeepCopy $value }
+    else { $copy[$key] = $value }
+   } 
+   $copy
+}
+
 # Config
 function Assert-Format ($x, [Hashtable]$format, $parent = $null) {
     foreach ($key in $format.Keys) {
@@ -193,7 +203,6 @@ class ExcelHandle {
     }
     
     [Void] Release () {
-        Write-Host "Releasing Excel-Instance..."
         $this.app.Visible = $this.initially_visible
         if ($this.should_close) {
             $this.workbook.Close($true)
@@ -454,7 +463,7 @@ function ExpandRulesData ([Hashtable]$data_packet) {
     if ($data.t0_internet) { $gateways += "T0 Internet" }
     if ($data.t1_payload -or -not $gateways.Length) { $gateways += "T1 Payload" }
     $gateways | ForEach-Object {
-        $new_packet = $data_packet.Clone()
+        $new_packet = DeepCopy $data_packet
         $new_packet.data.gateway = $_
         $new_packet
     }
@@ -888,6 +897,10 @@ function Main ([String]$conf_path, [String]$specific_action = "") {
     Write-Host "Opening Excel-instance..."
     [ExcelHandle]$excel_handle = [ExcelHandle]::New($config.excel.filepath) # might throw
 
+    $actions_str = Join ($actions | ForEach-Object { "$_".ToLower() }) "/"
+    $sheet_names_str = Join ($sheet_configs | ForEach-Object { $_.sheet_name }) ", "
+    Write-Host "Request-Plan: $actions_str resources in $sheet_names_str."
+
     try {
         foreach ($sheet_config in $sheet_configs) {
             $handle_datasheet_params = @{
@@ -903,6 +916,7 @@ function Main ([String]$conf_path, [String]$specific_action = "") {
         }
     } finally {
         PrintDivider
+        Write-Host "Releasing Excel-Instance..."
         $excel_handle.Release()
     }
 }
