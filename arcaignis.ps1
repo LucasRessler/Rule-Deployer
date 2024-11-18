@@ -12,8 +12,10 @@
 #             |__/                                                        #
 ###########################################################################
 
+
 $DEFAULT_CONF_PATH = "$HOME\arcaignis.json"
 $TEST_PREFIX = "ArcaIgnis-Test---"
+
 
 # Utils
 function Join ([Object[]]$arr, [String]$delim) {
@@ -707,13 +709,13 @@ function Get-RulesConfig ([Hashtable]$config) {
                 is_optional = $true
             }
             @{
-                dbg_name = "T1 Payload"
-                field_name = "t1_payload"
+                dbg_name = "T0 Internet"
+                field_name = "t0_internet"
                 is_optional = $true
             }
             @{
-                dbg_name = "T0 Internet"
-                field_name = "t0_internet"
+                dbg_name = "T1 Payload"
+                field_name = "t1_payload"
                 is_optional = $true
             }
         )
