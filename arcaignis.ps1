@@ -12,8 +12,12 @@
 #             |__/                                                        #
 ###########################################################################
 
+[CmdletBinding()]
+param (
+    [String]$ConfigPath = "$HOME\arcaignis.json",
+    [String]$Action
+)
 
-$DEFAULT_CONF_PATH = "$HOME\arcaignis.json"
 $TEST_PREFIX = "ArcaIgnis-Test---"
 
 
@@ -923,8 +927,6 @@ function Main ([String]$conf_path, [String]$specific_action = "") {
     }
 }
 
-$conf_path = if ($args[0]) { $args[0] } else { $DEFAULT_CONF_PATH }
-$specific_action = $args[1]
-try { Main $conf_path $specific_action }
+try { Main $ConfigPath $Action }
 catch { $Host.UI.WriteErrorLine($_.Exception.Message); exit 666 }
 Write-Host "Done!"
