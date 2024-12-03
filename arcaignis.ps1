@@ -82,12 +82,12 @@ function Get-Config ([String]$conf_path) {
     Assert-Format $config @{
         api = @{
             base_url = @{}
-            catalog_ids = @{ servergroups = @{}; portgroups = @{}; rules = @{} }
+            catalog_ids = @{ security_groups = @{}; services = @{}; rules = @{} }
             credentials = @{ username = @{}; password = @{}; tennant = @{} }
         }
         excel = @{
             filepath = @{}
-            sheetnames = @{ servergroups = @{}; portgroups = @{}; rules = @{} }
+            sheetnames = @{ security_groups = @{}; services = @{}; rules = @{} }
         }
     }
 
@@ -113,7 +113,7 @@ function Get-Config ([String]$conf_path) {
         }
         regex = @{
             groupname = "[A-Za-z0-9_-]+"
-            servicerequest = "[A-Za-z0-9_-]+"
+            servicerequest = "[A-Za-z]+\d+"
             ip_addr = $regex_ip
             ip_cidr = "$regex_ip(/$regex_cidr)?"         # ip or ip/cidr
             port = "[A-Za-z0-9]+\s*:\s*$regex_u16_range" # word:u16-range - protocols checked in `ParsePort`
@@ -475,7 +475,7 @@ function ExpandRulesData ([Hashtable]$data_packet) {
     }
 }
 
-function ConvertServergroupsData ([Hashtable]$data, [ApiAction]$action) {
+function ConvertSecurityGroupsData ([Hashtable]$data, [ApiAction]$action) {
     $name = "$TEST_PREFIX$($data.name)"
     if ($action -eq [ApiAction]::Delete) {
         return @{
@@ -497,7 +497,7 @@ function ConvertServergroupsData ([Hashtable]$data, [ApiAction]$action) {
     $body
 }
 
-function ConvertPortgroupsData ([Hashtable]$data, [ApiAction]$action) {
+function ConvertServicesData ([Hashtable]$data, [ApiAction]$action) {
     $name = "$TEST_PREFIX$($data.name)"
     if ($action -eq [ApiAction]::Delete) {
         return @{
@@ -541,8 +541,8 @@ function ConvertPortgroupsData ([Hashtable]$data, [ApiAction]$action) {
 }
 
 function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
-    # TODO: Insert Jenkins ID instead of "LRAutomation"
-    $name = Join @($data.servicerequest, $data.index, "LRAutomation") "_"
+    # TODO: Insert Jenkins ID?
+    $name = Join @($data.servicerequest[0], $data.index, "Auto") "_"
     $name = "${TEST_PREFIX}$name"
     if ($action -eq [ApiAction]::Delete) {
         return @{
@@ -571,7 +571,7 @@ function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
 }
 
 # Data Configs
-function Get-ServergroupsConfig ([Hashtable]$config) {
+function Get-SecurityGroupsConfig ([Hashtable]$config) {
     @{
         format = @(
             @{
@@ -590,7 +590,6 @@ function Get-ServergroupsConfig ([Hashtable]$config) {
             @{
                 dbg_name = "Host Name"
                 field_name = "hostname"
-                # TODO: Should this be optional?
                 is_optional = $true
             }
             @{
@@ -602,24 +601,22 @@ function Get-ServergroupsConfig ([Hashtable]$config) {
                 dbg_name = "NSX-Servicerequest"
                 field_name = "servicerequest"
                 regex = $config.regex.servicerequest
-                # TODO: Should this be optional?
                 is_optional = $true
-                # TODO: Hnnngghh??
-                # is_array = $true
+                is_array = $true
             }
         )
         resource_name = "Security Group"
-        sheet_name = $config.excel.sheetnames.servergroups
-        catalog_id = $config.api.catalog_ids.servergroups
+        sheet_name = $config.excel.sheetnames.security_groups
+        catalog_id = $config.api.catalog_ids.security_groups
         ddos_sleep_time = 1.0
         converter = {
             param ([Hashtable]$data, [ApiAction]$action)
-            ConvertServergroupsData $data $action
+            ConvertSecurityGroupsData $data $action
         }
     }
 }
 
-function Get-PortgroupsConfig ([Hashtable]$config) {
+function Get-ServicesConfig ([Hashtable]$config) {
     @{
         format = @(
             @{
@@ -644,19 +641,17 @@ function Get-PortgroupsConfig ([Hashtable]$config) {
                 dbg_name = "NSX-Servicerequest"
                 field_name = "servicerequest"
                 regex = $config.regex.servicerequest
-                # TODO: Should this be optional?
                 is_optional = $true
-                # TODO: Hnnngghh??
                 is_array = $true
             }
         )
         resource_name = "Service"
-        sheet_name = $config.excel.sheetnames.portgroups
-        catalog_id = $config.api.catalog_ids.portgroups
+        sheet_name = $config.excel.sheetnames.services
+        catalog_id = $config.api.catalog_ids.services
         ddos_sleep_time = 1.0
         converter = {
             param ([Hashtable]$data, [ApiAction]$action)
-            ConvertPortgroupsData $data $action 
+            ConvertServicesData $data $action 
         }
     }
 }
@@ -667,7 +662,8 @@ function Get-RulesConfig ([Hashtable]$config) {
             @{
                 dbg_name = "NSX-Index"
                 field_name = "index"
-                regex = "[0-9]+"
+                regex = "[1-9][0-9]*"
+                regex_info = "Index must be an integer greater than 0!"
                 is_unique = $true
             }
             @{
@@ -703,8 +699,6 @@ function Get-RulesConfig ([Hashtable]$config) {
                 dbg_name = "NSX-Servicerequest"
                 field_name = "servicerequest"
                 regex = $config.regex.servicerequest
-                # TODO: Should this be optional?
-                is_optional = $true
                 is_array = $true
             }
             @{
@@ -726,7 +720,7 @@ function Get-RulesConfig ([Hashtable]$config) {
         resource_name = "FW-Rule"
         sheet_name = $config.excel.sheetnames.rules
         catalog_id = $config.api.catalog_ids.rules
-        ddos_sleep_time = 1.2
+        ddos_sleep_time = 5.0
         expander = {
             param ([Hashtable]$data)
             ExpandRulesData $data
@@ -869,8 +863,8 @@ function Main ([String]$conf_path, [String]$specific_action = "") {
     Write-Host "Loading config from $conf_path..."
     [Hashtable]$config = Get-Config $conf_path # might throw
     [Hashtable[]]$sheet_configs = @(
-        (Get-ServergroupsConfig $config)
-        (Get-PortgroupsConfig $config)
+        (Get-SecurityGroupsConfig $config)
+        (Get-ServicesConfig $config)
         (Get-RulesConfig $config)
     )
 
