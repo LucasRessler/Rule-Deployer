@@ -720,7 +720,8 @@ function Get-RulesConfig ([Hashtable]$config) {
         resource_name = "FW-Rule"
         sheet_name = $config.excel.sheetnames.rules
         catalog_id = $config.api.catalog_ids.rules
-        ddos_sleep_time = 5.0
+        additional_deploy_chances = 2
+        ddos_sleep_time = 3.0
         expander = {
             param ([Hashtable]$data)
             ExpandRulesData $data
@@ -871,8 +872,6 @@ function Main ([String]$conf_path, [String]$specific_action = "") {
     [ApiAction[]]$default_actions = @([ApiAction]::Create, [ApiAction]::Update)
     [ApiAction[]]$actions = switch ($specific_action.ToLower()) {
         ""       { $default_actions }
-        "double" { $default_actions | ForEach-Object { @($_, $_) } }
-        "triple" { $default_actions | ForEach-Object { @($_, $_, $_) } }
         "create" { @([ApiAction]::Create) }
         "update" { @([ApiAction]::Update) }
         "delete" {
@@ -904,11 +903,11 @@ function Main ([String]$conf_path, [String]$specific_action = "") {
     try {
         foreach ($sheet_config in $sheet_configs) {
             $handle_datasheet_params = @{
+                actions = $actions + @($actions | ForEach-Object { @($_) * $sheet_config.additional_deploy_chances })
                 excel_handle = $excel_handle
                 api_handle = $api_handle
                 sheet_config = $sheet_config
                 config = $config
-                actions = $actions
             }
 
             try { HandleDataSheet @handle_datasheet_params | Out-Null }
