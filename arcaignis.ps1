@@ -1,20 +1,8 @@
-###########################################################################
-#   █████╗ ██████╗  ██████╗ █████╗     ██╗ ██████╗ ███╗   ██╗██╗███████╗  #
-#  ██╔══██╗██╔══██╗██╔════╝██╔══██╗    ██║██╔════╝ ████╗  ██║██║██╔════╝  #
-#  ███████║██████╔╝██║     ███████║    ██║██║  ███╗██╔██╗ ██║██║███████╗  #
-#  ██╔══██║██╔══██╗██║     ██╔══██║    ██║██║   ██║██║╚██╗██║██║╚════██║  #
-#  ██║  ██║██║  ██║╚██████╗██║  ██║    ██║╚██████╔╝██║ ╚████║██║███████║  #
-#  ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝    ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝╚══════╝  #
-#        _           _                     ___           _                #
-#       | |__ _  _  | |  _  _ __ __ _ ___ | _ \___ _____| |___ _ _        #
-#       | '_ \ || | | |_| || / _/ _` (_-< |   / -_|_-<_-< / -_) '_|       #
-#       |_.__/\_, | |____\_,_\__\__,_/__/ |_|_\___/__/__/_\___|_|         #
-#             |__/                                                        #
-###########################################################################
-
 [CmdletBinding()]
 param (
     [String]$ConfigPath = "$HOME\arcaignis.json",
+    [String]$InlineJson,
+    [String]$Tennant,
     [String]$Action
 )
 
@@ -111,7 +99,7 @@ function Get-Config ([String]$conf_path) {
         api = @{
             base_url = @{}
             catalog_ids = @{ security_groups = @{}; services = @{}; rules = @{} }
-            credentials = @{ username = @{}; password = @{}; tennant = @{} }
+            credentials = @{ username = @{}; password = @{} }
         }
         excel = @{
             filepath = @{}
@@ -318,10 +306,23 @@ class JsonHandle : IOHandle {
     }
 
     [Hashtable[]] GetResourceData ([Hashtable]$resource_config) {
-       $data = @($this.input_data[$resource_config.field_name])
-       if (-not $data) { return @() }
-       if (-not $data -is [Hashtable[]]) { throw "Received invalid json format" }
-       return $data
+        $data = @($this.input_data[$resource_config.field_name])
+        if (-not $data) { return @() }
+        if (-not $data -is [Hashtable[]]) { throw "Received invalid json format" }
+        [Hashtable[]]$output_data = @()
+        for ($i = 0; $i -lt $data.Length; $i++) {
+            $packet = @()
+            foreach ($key in $resource_config.format | ForEach-Object { $_.field_name }) {
+                $value = $data[$i][$key]
+                if ($value -is [String[]]) { $value = Join $value "`n" }
+                $packet += if ($value) { $value } else { "" }
+            }
+            $output_data += @{
+                row_index = $i
+                cells = $packet
+            }
+        }
+        return $output_data
     }
 
     [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {
@@ -336,12 +337,11 @@ class ApiHandle {
     [String]$url_deployments
     [String]$url_items
     
-    ApiHandle ([Hashtable]$config) {
+    ApiHandle ([Hashtable]$config, [String]$tennant) {
         $this.url_deployments = $config.api.urls.deployments
         $this.url_items = $config.api.urls.items
         $username = $config.api.credentials.username
         $password = $config.api.credentials.password
-        $tennant = $config.api.credentials.tennant
 
         # get refresh token
         try {
@@ -842,7 +842,7 @@ function Get-RulesConfig ([Hashtable]$config) {
 
 function HandleDataSheet {
     param (
-        [ExcelHandle]$io_handle,
+        [IOHandle]$io_handle,
         [ApiHandle]$api_handle,
         [Hashtable]$resource_config,
         [Hashtable]$config,
@@ -979,7 +979,7 @@ function HandleDataSheet {
     NothingMoreToDo
 }
 
-function Main ([String]$conf_path, [String]$specific_action = "") {
+function Main ([String]$conf_path, [String]$tennant, [String]$inline_json, [String]$specific_action = "") {
     Write-Host "Loading config from $conf_path..."
     [Hashtable]$config = Get-Config $conf_path # might throw
     [Hashtable[]]$resource_configs = @(
@@ -1009,10 +1009,13 @@ function Main ([String]$conf_path, [String]$specific_action = "") {
 
     Write-Host "Initialising communication with API..."
     # very dangerously disabling validating certification
+    if (-not $tennant) { throw "Please provide a tennant name" }
     [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-    [ApiHandle]$api_handle = [ApiHandle]::New($config) # might throw
+    [ApiHandle]$api_handle = [ApiHandle]::New($config, $tennant) # might throw
 
-    [IOHandle]$io_handle = if ($false) {} else {
+    [IOHandle]$io_handle = if ($inline_json) {
+        [JsonHandle]::New($inline_json, ".\xmpl\example_image.json")
+    } else {
         Write-Host "Opening Excel-instance..."
         [ExcelHandle]::New($config.excel.filepath, ".\xmpl\example_image.json") # might throw
     }
@@ -1041,6 +1044,6 @@ function Main ([String]$conf_path, [String]$specific_action = "") {
     }
 }
 
-try { Main $ConfigPath $Action }
+try { Main $ConfigPath $Tennant $InlineJson $Action }
 catch { $Host.UI.WriteErrorLine($_.Exception.Message); exit 666 }
 Write-Host "Done!"
