@@ -58,6 +58,34 @@ function Punctuate ([Int]$achieved, [Int]$total) {
     else                     { return "... :(" }
 }
 
+function ConvertTo-Hashtable {
+    [CmdletBinding()]
+    param(
+        [parameter(ValueFromPipeline)]
+        [PSCustomObject]$input_object
+    )
+
+    process {
+        function ConvertRecursive ([Object]$obj) {
+            if ($obj -is [PSCustomObject]) {
+                [Hashtable]$hash = @{}
+                foreach ($key in $obj.PSObject.Properties.Name) { 
+                    $hash[$key] = ConvertRecursive $obj.$key
+                }
+                return $hash
+            } elseif ($obj -is [Array]) {
+                return @($obj | ForEach-Object {
+                    if ($_ -is [String] -or $_ -is [Boolean] -or $_ -is [Int] -or $_ -is [Double]) { $_ }
+                    else { ConvertRecursive $_ }
+                })
+            } else {
+                return $obj
+            }
+        }
+        ConvertRecursive $input_object
+    }
+}
+
 function DeepCopy ([Hashtable]$source) {
    $copy = @{}
    foreach ($key in $source.Keys) {
@@ -139,12 +167,67 @@ enum ApiAction {
     Delete
 }
 
-class ExcelHandle {
+class OutputValue {
+    [String]$message
+    [String]$short_info
+    [String]$excel_color
+    [Int]$excel_index
+
+    OutputValue ([String]$message, [String]$short_info, [String]$excel_color, [Int]$excel_index) {
+        $this.message = $message
+        $this.short_info = $short_info
+        $this.excel_color = $excel_color
+        $this.excel_index = $excel_index
+    }
+}
+
+class IOHandle {
+    [String]$nsx_image_path
+    [Hashtable]$nsx_image
+    [String[]]$log = @()
+    
+    IOHandle ([String]$nsx_image_path) {
+        $this.nsx_image_path = $nsx_image_path
+        try { $this.nsx_image = Get-Content $nsx_image_path | ConvertFrom-Json | ConvertTo-Hashtable }
+        catch { $this.nsx_image = @{} }
+    }
+
+    [Void] UpdateNsxImage ([Hashtable]$input_data, [ApiAction]$action) {
+        function update_recursive([Hashtable]$source, [Hashtable]$target, [Bool]$delete) {
+            foreach ($key in $source.Keys) {
+                $value = $source[$key]
+                if ($value -is [Hashtable]) {
+                    if (-not $delete -and -not $target[$key] ) { $target[$key] = @{} }
+                    general $value $target[$key] $delete
+                    if ($delete -and -not $target[$key].Keys.Length) { $target.Remove($key) }
+                } else {
+                    if ($delete) { $target.Remove($key) }
+                    else { $target[$key] = $value }
+                }
+            }
+        }
+        update_recursive $input_data $this.nsx_image ($action -eq [ApiAction]::Delete)
+    }
+    
+    [Void] SaveNsxImage () {
+        $this.nsx_image | ConvertTo-Json -Depth 8 -Compress | Set-Content -Path $this.nsx_image_path
+    }
+
+    [String] GetLog () {
+        return Join $this.log "`n"
+    }
+
+    [Hashtable[]]GetResourceData ([Hashtable]$resource_config) { throw [System.NotImplementedException] "GetResourceData must be implemented!" }
+    [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) { throw [System.NotImplementedException] "UpdateOutput must be implemented!" }
+    [Void] Release () { $this.SaveNsxImage() }
+}
+
+class ExcelHandle : IOHandle {
     [__ComObject]$app
     [__ComObject]$workbook
     [Bool]$should_close
     
-    ExcelHandle ([String]$file_path) {
+    ExcelHandle ([String]$file_path, [String]$nsx_image_path) : base ($nsx_image_path) {
         try {
             $this.app = [Runtime.Interopservices.Marshal]::GetActiveObject('Excel.Application')
             foreach ($wb in $this.app.Workbooks) {
@@ -165,9 +248,9 @@ class ExcelHandle {
         $this.app.Visible = $false
     }
 
-    [Hashtable[]] GetSheetData ([Hashtable]$sheet_config) {
-        [String]$sheet_name = $sheet_config.sheet_name
-        [Int]$output_column = $sheet_config.format.Length + 1
+    [Hashtable[]] GetResourceData ([Hashtable]$resource_config) {
+        [String]$sheet_name = $resource_config.sheet_name
+        [Int]$output_column = $resource_config.format.Length + 1
         try { $sheet = $this.workbook.Worksheets.Item($sheet_name) }
         catch { throw Format-Error -Message "Sheet '$sheet_name' could not be opened" -Cause $_.Exception.Message }
 
@@ -196,19 +279,21 @@ class ExcelHandle {
         return $data 
     }
 
-    [Void] UpdateCreationStatus ([Hashtable]$sheet_config, [Int]$row_index, [String]$value, [Int]$color = 0) {
-        [Int]$output_column = $sheet_config.format.Length + 1
-        [String]$sheet_name = $sheet_config.sheet_name
+    [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {
+        [Int]$output_column = $resource_config.format.Length + 1
+        [String]$sheet_name = $resource_config.sheet_name
+        $this.log += $value.message
         try { $sheet = $this.workbook.Worksheets.Item($sheet_name) }
         catch { throw Format-Error -Message "Sheet '$sheet_name' could not be opened" -Cause $_.Exception.Message }
-        $cell = $sheet.Cells.Item($row_index, $output_column)
-        if ($cell.Text -ne $value) {
-            $cell.Value = Join @($cell.Text, $value) ", "
-            $cell.Font.Color = $color
+        $cell = $sheet.Cells.Item($value.excel_index, $output_column)
+        if ($cell.Text -ne $value.short_info) {
+            $cell.Value = Join @($cell.Text, $value.short_info) ", "
+            $cell.Font.Color = $value.excel_color
         }
     }
     
     [Void] Release () {
+        $this.SaveNsxImage()
         $this.app.Visible = $this.initially_visible
         if ($this.should_close) {
             $this.workbook.Close($true)
@@ -222,6 +307,25 @@ class ExcelHandle {
         $this.Finalize()
         [System.GC]::Collect()
         [System.GC]::WaitForPendingFinalizers()
+    }
+}
+
+class JsonHandle : IOHandle {
+    [Hashtable]$input_data
+
+    JsonHandle ([String]$raw_json, [String]$nsx_image_path) : base ($nsx_image_path) {
+        $this.input_data = $raw_json | ConvertFrom-Json | ConvertTo-Hashtable
+    }
+
+    [Hashtable[]] GetResourceData ([Hashtable]$resource_config) {
+       $data = @($this.input_data[$resource_config.field_name])
+       if (-not $data) { return @() }
+       if (-not $data -is [Hashtable[]]) { throw "Received invalid json format" }
+       return $data
+    }
+
+    [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {
+        $this.log += $value.message
     }
 }
 
@@ -542,7 +646,7 @@ function ConvertServicesData ([Hashtable]$data, [ApiAction]$action) {
 
 function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
     # TODO: Insert Jenkins ID?
-    $name = Join @($data.servicerequest[0], $data.index, "Auto") "_"
+    $name = Join @(@($data.servicerequest)[0], $data.index, "Auto") "_"
     $name = "${TEST_PREFIX}$name"
     if ($action -eq [ApiAction]::Delete) {
         return @{
@@ -606,6 +710,7 @@ function Get-SecurityGroupsConfig ([Hashtable]$config) {
             }
         )
         resource_name = "Security Group"
+        field_name = "security_groups"
         sheet_name = $config.excel.sheetnames.security_groups
         catalog_id = $config.api.catalog_ids.security_groups
         ddos_sleep_time = 1.0
@@ -646,6 +751,7 @@ function Get-ServicesConfig ([Hashtable]$config) {
             }
         )
         resource_name = "Service"
+        field_name = "services"
         sheet_name = $config.excel.sheetnames.services
         catalog_id = $config.api.catalog_ids.services
         ddos_sleep_time = 1.0
@@ -718,6 +824,7 @@ function Get-RulesConfig ([Hashtable]$config) {
             }
         )
         resource_name = "FW-Rule"
+        field_name = "rules"
         sheet_name = $config.excel.sheetnames.rules
         catalog_id = $config.api.catalog_ids.rules
         additional_deploy_chances = 2
@@ -735,14 +842,14 @@ function Get-RulesConfig ([Hashtable]$config) {
 
 function HandleDataSheet {
     param (
-        [ExcelHandle]$excel_handle,
+        [ExcelHandle]$io_handle,
         [ApiHandle]$api_handle,
-        [Hashtable]$sheet_config,
+        [Hashtable]$resource_config,
         [Hashtable]$config,
         [ApiAction[]]$actions
     )
 
-    [String]$sheet_name = $sheet_config.sheet_name
+    [String]$sheet_name = $resource_config.sheet_name
     function NothingMoreToDo {
         Write-Host "Filled out creation status for $sheet_name."
         Write-Host "Nothing more to do!"
@@ -751,7 +858,7 @@ function HandleDataSheet {
     # Get Raw Data
     PrintDivider
     Write-Host "Loading data for $sheet_name..."
-    [Hashtable[]]$raw_data = $excel_handle.GetSheetData($sheet_config)
+    [Hashtable[]]$raw_data = $io_handle.GetResourceData($resource_config)
     [Int]$num_data = $raw_data.Length
     if ($num_data -eq 0) { Write-Host "Nothing to do!"; return }
 
@@ -765,13 +872,16 @@ function HandleDataSheet {
 
         try {
             $to_deploy += @{
-                data = ParseDataSheet -data $data -format $sheet_config.format -unique_check $unique_check_map
+                data = ParseDataSheet -data $data -format $resource_config.format -unique_check $unique_check_map
                 row_index = $data.row_index
             }
         } catch {
-            $err_message = $_.Exception.Message
-            $Host.UI.WriteErrorLine("->> Parse error in ${sheet_name}: $err_message")
-            $excel_handle.UpdateCreationStatus($sheet_config, $data.row_index, $err_message.Split(":")[0], $config.color.parse_error)
+            [String]$err_message = $_.Exception.Message
+            [String]$short_info = $err_message.Split(":")[0]
+            [String]$message = "->> Parse error in ${sheet_name}: $err_message"
+            [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.parse_error, $data.row_index)
+            $Host.UI.WriteErrorLine($message)
+            $io_handle.UpdateOutput($resource_config, $val)
         }
     }
 
@@ -780,8 +890,8 @@ function HandleDataSheet {
     if ($num_to_deploy -eq 0) { NothingMoreToDo; return }
 
     # Expand Data
-    if ($sheet_config.expander) {
-        $to_deploy = $to_deploy | ForEach-Object { & $sheet_config.expander -data $_ }
+    if ($resource_config.expander) {
+        $to_deploy = $to_deploy | ForEach-Object { & $resource_config.expander -data $_ }
         if ($to_deploy.Length -gt $num_to_deploy) {
             $num_to_deploy = $to_deploy.Length
             Write-Host "Expanded data to $num_to_deploy API calls!"
@@ -804,21 +914,24 @@ function HandleDataSheet {
         for ($i = 0; $i -lt $num_to_deploy; $i++) {
             ShowPercentage $i $num_to_deploy
             [Hashtable]$data = $to_deploy[$i].data
-            [String]$deployment_name = "$action $($sheet_config.resource_name) - $(Get-Date -UFormat %s -Millisecond 0) - LR Automation"
+            [String]$deployment_name = "$action $($resource_config.resource_name) - $(Get-Date -UFormat %s -Millisecond 0) - LR Automation"
 
             try {
-                [Hashtable]$inputs = & $sheet_config.converter -data $data -action $action
+                [Hashtable]$inputs = & $resource_config.converter -data $data -action $action
                 $deployed += @{
-                    id = $api_handle.Deploy($deployment_name, $sheet_config.catalog_id, $inputs)
+                    id = $api_handle.Deploy($deployment_name, $resource_config.catalog_id, $inputs)
                     row_index = $to_deploy[$i].row_index 
                     preconverted = $data
                 }
             } catch {
-                $Host.UI.WriteErrorLine("->> Deploy error in ${sheet_name}: $($_.Exception.Message)")
-                $excel_handle.UpdateCreationStatus($sheet_config, $to_deploy[$i].row_index, "Deployment Failed", $config.color.dploy_error)
+                [String]$short_info = "Deployment Failed"
+                [String]$message = "->> Deploy error in ${sheet_name}: $($_.Exception.Message)"
+                [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $to_deploy[$i].row_index)
+                $Host.UI.WriteErrorLine($message)
+                $io_handle.UpdateOutput($resource_config, $val)
             }
 
-            Start-Sleep $sheet_config.ddos_sleep_time # Mandatory because of DDoS protection probably
+            Start-Sleep $resource_config.ddos_sleep_time # Mandatory because of DDoS protection probably
         }
         
         [Int]$num_deployed = $deployed.Length
@@ -834,7 +947,10 @@ function HandleDataSheet {
             [DeploymentStatus]$status = $api_handle.WaitForDeployment($deployment.id)
 
             if ($status -eq [DeploymentStatus]::Successful) {
-                $excel_handle.UpdateCreationStatus($sheet_config, $deployment.row_index, "$action Successful", $config.color.success)
+                [String]$short_info = "$action Successful"
+                [String]$message = "Resource at row $($deployment.row_index) in $sheet_name was ${$action_verb}d successfully."
+                [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.success, $deployment.row_index)
+                $io_handle.UpdateOutput($resource_config, $val)
             } else {
                 $to_deploy += @{
                     data = $deployment.preconverted
@@ -853,8 +969,11 @@ function HandleDataSheet {
     [String]$requests_str = "$actions_str-request$(PluralityIn $actions.Length)"
     foreach ($failed in $to_deploy) {
         $row_index = $failed.row_index
-        $Host.UI.WriteErrorLine("->> $requests_str for resource at row $row_index in $sheet_name failed")
-        $excel_handle.UpdateCreationStatus($sheet_config, $row_index, "$actions_str Failed", $config.color.dploy_error)
+        [String]$short_info = "$actions_str Failed"
+        [String]$message = "->> $requests_str for resource at $row_index in $shet_name failed"
+        [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $row_index)
+        $Host.UI.WriteErrorLine($message)
+        $io_handle.UpdateOutput($resource_config, $val)
     }
 
     NothingMoreToDo
@@ -863,7 +982,7 @@ function HandleDataSheet {
 function Main ([String]$conf_path, [String]$specific_action = "") {
     Write-Host "Loading config from $conf_path..."
     [Hashtable]$config = Get-Config $conf_path # might throw
-    [Hashtable[]]$sheet_configs = @(
+    [Hashtable[]]$resource_configs = @(
         (Get-SecurityGroupsConfig $config)
         (Get-ServicesConfig $config)
         (Get-RulesConfig $config)
@@ -875,7 +994,7 @@ function Main ([String]$conf_path, [String]$specific_action = "") {
         "create" { @([ApiAction]::Create) }
         "update" { @([ApiAction]::Update) }
         "delete" {
-            [Array]::Reverse($sheet_configs)
+            [Array]::Reverse($resource_configs)
             @([ApiAction]::Delete)
         }
 
@@ -893,20 +1012,22 @@ function Main ([String]$conf_path, [String]$specific_action = "") {
     [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
     [ApiHandle]$api_handle = [ApiHandle]::New($config) # might throw
 
-    Write-Host "Opening Excel-instance..."
-    [ExcelHandle]$excel_handle = [ExcelHandle]::New($config.excel.filepath) # might throw
+    [IOHandle]$io_handle = if ($false) {} else {
+        Write-Host "Opening Excel-instance..."
+        [ExcelHandle]::New($config.excel.filepath, ".\xmpl\example_image.json") # might throw
+    }
 
     $actions_str = Join ($actions | ForEach-Object { "$_".ToLower() }) "/"
-    $sheet_names_str = Join ($sheet_configs | ForEach-Object { $_.sheet_name }) ", "
+    $sheet_names_str = Join ($resource_configs | ForEach-Object { $_.sheet_name }) ", "
     Write-Host "Request-Plan: $actions_str resources in $sheet_names_str."
 
     try {
-        foreach ($sheet_config in $sheet_configs) {
+        foreach ($resource_config in $resource_configs) {
             $handle_datasheet_params = @{
-                actions = $actions + @($actions | ForEach-Object { @($_) * $sheet_config.additional_deploy_chances })
-                excel_handle = $excel_handle
+                actions = $actions + @($actions | ForEach-Object { @($_) * $resource_config.additional_deploy_chances })
+                io_handle = $io_handle
                 api_handle = $api_handle
-                sheet_config = $sheet_config
+                resource_config = $resource_config
                 config = $config
             }
 
@@ -916,7 +1037,7 @@ function Main ([String]$conf_path, [String]$specific_action = "") {
     } finally {
         PrintDivider
         Write-Host "Releasing Excel-Instance..."
-        $excel_handle.Release()
+        $io_handle.Release()
     }
 }
 
