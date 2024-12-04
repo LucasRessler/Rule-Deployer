@@ -96,6 +96,7 @@ function Assert-Format ($x, [Hashtable]$format, $parent = $null) {
 function Get-Config ([String]$conf_path) {
     $config = Get-Content $conf_path | ConvertFrom-Json
     Assert-Format $config @{
+        nsx_image_path = @{}
         api = @{
             base_url = @{}
             catalog_ids = @{ security_groups = @{}; services = @{}; rules = @{} }
@@ -115,6 +116,7 @@ function Get-Config ([String]$conf_path) {
     $regex_u16_range = "$regex_u16(\s*-\s*$regex_u16)?"                                      # u16 or u16-u16
 
     @{
+        nsx_image_path = $config.nsx_image_path
         excel = $config.excel
         api = @{
             catalog_ids = $config.api.catalog_ids
@@ -176,7 +178,7 @@ class IOHandle {
     
     IOHandle ([String]$nsx_image_path) {
         $this.nsx_image_path = $nsx_image_path
-        try { $this.nsx_image = Get-Content $nsx_image_path | ConvertFrom-Json | ConvertTo-Hashtable }
+        try { $this.nsx_image = Get-Content $nsx_image_path -ErrorAction Stop | ConvertFrom-Json | ConvertTo-Hashtable }
         catch { $this.nsx_image = @{} }
     }
 
@@ -314,8 +316,7 @@ class JsonHandle : IOHandle {
             $packet = @()
             foreach ($key in $resource_config.format | ForEach-Object { $_.field_name }) {
                 $value = $data[$i][$key]
-                if ($value -is [String[]]) { $value = Join $value "`n" }
-                $packet += if ($value) { $value } else { "" }
+                $packet += if ($value) { Join $value "`n" } else { "" }
             }
             $output_data += @{
                 row_index = $i
@@ -970,7 +971,7 @@ function HandleDataSheet {
     foreach ($failed in $to_deploy) {
         $row_index = $failed.row_index
         [String]$short_info = "$actions_str Failed"
-        [String]$message = "->> $requests_str for resource at $row_index in $shet_name failed"
+        [String]$message = "->> $requests_str for resource at $row_index in $sheet_name failed"
         [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $row_index)
         $Host.UI.WriteErrorLine($message)
         $io_handle.UpdateOutput($resource_config, $val)
@@ -1014,10 +1015,10 @@ function Main ([String]$conf_path, [String]$tennant, [String]$inline_json, [Stri
     [ApiHandle]$api_handle = [ApiHandle]::New($config, $tennant) # might throw
 
     [IOHandle]$io_handle = if ($inline_json) {
-        [JsonHandle]::New($inline_json, ".\xmpl\example_image.json")
+        [JsonHandle]::New($inline_json, $config.nsx_image_path)
     } else {
         Write-Host "Opening Excel-instance..."
-        [ExcelHandle]::New($config.excel.filepath, ".\xmpl\example_image.json") # might throw
+        [ExcelHandle]::New($config.excel.filepath, $config.nsx_image_path) # might throw
     }
 
     $actions_str = Join ($actions | ForEach-Object { "$_".ToLower() }) "/"
@@ -1039,7 +1040,7 @@ function Main ([String]$conf_path, [String]$tennant, [String]$inline_json, [Stri
         }
     } finally {
         PrintDivider
-        Write-Host "Releasing Excel-Instance..."
+        Write-Host "Releasing IO-Handle..."
         $io_handle.Release()
     }
 }
