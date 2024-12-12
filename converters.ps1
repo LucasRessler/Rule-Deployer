@@ -1,0 +1,92 @@
+$TEST_PREFIX = "Arca-Ignis---"
+
+function ConvertSecurityGroupsData ([Hashtable]$data, [ApiAction]$action) {
+    [String]$name = "$TEST_PREFIX$($data.name)"
+    if ($action -eq [ApiAction]::Delete) {
+        return @{
+            action = "$action"
+            elementsToDelete = @("$name (IPSET)")
+        }
+    }
+
+    $body = @{
+            action = "$action"
+            name = $name
+            groupType = "IPSET"
+            ipAddress = Join @($data.ip_addresses | ForEach-Object { Join @($_.address, $_.net) "/" }) ", "
+    }
+
+    [String]$requests = Join @($data.servicerequest, $data.updaterequests) ", "
+    [String]$description = Join @($requests, $data.hostname, $data.comment) " - "
+    if ($description) { $body["description"] = $description }
+    if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = "$name (IPSET)" }
+    $body
+}
+
+function ConvertServicesData ([Hashtable]$data, [ApiAction]$action) {
+    $name = "$TEST_PREFIX$($data.name)"
+    if ($action -eq [ApiAction]::Delete) {
+        return @{
+            action = "$action"
+            elementsToDelete = @($name)
+        }
+    }
+
+    $body =  @{
+        action = "$action"
+        name = $name
+    }
+
+    $used_protocols = @{}
+    foreach ($portrange in $data.ports) {
+        $protocol = $portrange.protocol.ToUpper()
+        $portstring = $portrange.start
+        if ($portrange.start -ne $portrange.end) { $portstring += "-$($portrange.end)" }
+        if ($used_protocols[$protocol]) { $used_protocols[$protocol] += $portstring }
+        else { $used_protocols[$protocol] = @($portstring) }
+    }
+
+    $i = 1
+    foreach ($protocol in $used_protocols.Keys) {
+        $portranges = $used_protocols[$protocol]
+        $body["protocol$i"] = $protocol
+        $body["destinationPorts$i"] = $portranges
+        # TODO: Are specifically the source ports always empty?
+        # $body["sourcePorts$i"] = $portranges
+        $i++
+    }
+
+    [String]$requests = Join @($data.servicerequest, $data.updaterequests) ", "
+    [String]$description = Join @($requests, $data.comment) " - "
+    if ($description) { $body["description"] = $description }
+    if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = $name }
+    $body
+}
+
+function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
+    $name = "${TEST_PREFIX}$name"
+    if ($action -eq [ApiAction]::Delete) {
+        return @{
+            action = "$action"
+            gateway = $data.gateway
+            elementsToDelete = @($name)
+        } 
+    }
+
+    $body = @{
+        action = "$action"
+        name = $name
+        gateway = $data.gateway
+        firewallAction = "Allow"
+        sourceType = if ($data.sources.Length) { "Group" } else { "Any" }
+        destinationType = if ($data.destinations.Length) { "Group" } else { "Any" }
+        serviceType = if ($data.services.Length) { "Service" } else { "Any" }
+        sources = @($data.sources | ForEach-Object { "${TEST_PREFIX}$_ (IPSET)" })
+        destinations = @($data.destinations | ForEach-Object { "${TEST_PREFIX}$_ (IPSET)" })
+        services = @($data.services | ForEach-Object { "${TEST_PREFIX}$_" })
+    }
+
+    if ($data.comment) { $body["comment"] = $data.comment }
+    if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = $name }
+    $body
+}
