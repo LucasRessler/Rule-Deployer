@@ -1,3 +1,5 @@
+using module ".\utils.psm1"
+
 enum ApiAction {
     Create
     Update
@@ -5,7 +7,11 @@ enum ApiAction {
 }
 
 class DataPacket {
-    [Object]$data
+    [Hashtable]$data
+
+    DataPacket ([Hashtable]$data) {
+        $this.data = $data
+    }
 }
 
 class OutputValue {
@@ -29,29 +35,35 @@ class IOHandle {
     
     IOHandle ([String]$nsx_image_path) {
         $this.nsx_image_path = $nsx_image_path
-        try { $this.nsx_image = Get-Content $nsx_image_path -ErrorAction Stop | ConvertFrom-Json | ConvertTo-Hashtable }
-        catch { $this.nsx_image = @{} }
+        try { $img_json = Get-Content $nsx_image_path -ErrorAction Stop } catch { $img_json = "{}" }
+        $this.nsx_image = $img_json | ConvertFrom-Json | ConvertTo-Hashtable
     }
 
-    [Void] UpdateNsxImage ([Hashtable]$input_data, [ApiAction]$action) {
+    [Void] UpdateNsxImage ([Hashtable]$expanded_data, [ApiAction]$action) {
+        function is_leaf ([Hashtable]$target) {
+            foreach ($key in $target.Keys) {
+                if ($target[$key] -is [Hashtable]) { return $false }
+            }
+            return $true
+        }
+
         function update_recursive([Hashtable]$source, [Hashtable]$target, [Bool]$delete) {
             foreach ($key in $source.Keys) {
                 $value = $source[$key]
                 if ($value -is [Hashtable]) {
-                    if (-not $delete -and -not $target[$key] ) { $target[$key] = @{} }
-                    general $value $target[$key] $delete
-                    if ($delete -and -not $target[$key].Keys.Length) { $target.Remove($key) }
-                } else {
-                    if ($delete) { $target.Remove($key) }
-                    else { $target[$key] = $value }
+                    if (-not $target[$key] ) { $target[$key] = @{} }
+                    update_recursive $value $target[$key] $delete
+                    if ($delete -and (is_leaf $target[$key])) { $target.Remove($key) }
+                } elseif (-not $delete) {
+                    $target[$key] = $value
                 }
             }
         }
-        update_recursive $input_data $this.nsx_image ($action -eq [ApiAction]::Delete)
+        update_recursive $expanded_data $this.nsx_image ($action -eq [ApiAction]::Delete)
     }
     
     [Void] SaveNsxImage () {
-        $this.nsx_image | ConvertTo-Json -Depth 8 -Compress | Set-Content -Path $this.nsx_image_path
+        CustomConvertToJson -obj $this.nsx_image | Set-Content -Path $this.nsx_image_path
     }
 
     [String] GetLog () {
@@ -59,7 +71,7 @@ class IOHandle {
     }
 
     [DataPacket[]]GetResourceData ([Hashtable]$resource_config) { throw [System.NotImplementedException] "GetResourceData must be implemented!" }
-    [DataPacket]ParseToIntermediate ([Hashtable]$resource_config, [DataPacket]$data) { throw [System.NotImplementedException] "ParseToIntermediate must be implemented!" }
+    [DataPacket[]]ParseToIntermediate ([Hashtable]$resource_config, [DataPacket]$data_packet) { throw [System.NotImplementedException] "ParseToIntermediate must be implemented!" }
     [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) { throw [System.NotImplementedException] "UpdateOutput must be implemented!" }
     [Void] Release () { $this.SaveNsxImage() }
 }
@@ -69,11 +81,16 @@ class ExcelHandle : IOHandle {
     [__ComObject]$workbook
     [Bool]$should_close
     
-    ExcelHandle ([String]$file_path, [String]$nsx_image_path) : base ($nsx_image_path) {
+    ExcelHandle ([String]$nsx_image_path) : base ($nsx_image_path) {}
+
+    [Void] Open([String]$file_path) {
         try {
+            Add-Type -AssemblyName System.Web
             $this.app = [Runtime.Interopservices.Marshal]::GetActiveObject('Excel.Application')
+            $sanitised_file_path = if (-not $file_path.StartsWith("https://")) { $file_path }
+            else { [System.Web.HttpUtility]::UrlDecode($file_path.Split("?")[0]) }
             foreach ($wb in $this.app.Workbooks) {
-                if ($wb.FullName -eq $file_path) {
+                if ($wb.FullName -eq $sanitised_file_path) {
                     $this.workbook = $wb
                     break
                 }
@@ -95,39 +112,36 @@ class ExcelHandle : IOHandle {
         $this.app.Visible = $false
     }
 
-    [Hashtable[]] GetResourceData ([Hashtable]$resource_config) {
+    [DataPacket[]] GetResourceData ([Hashtable]$resource_config) {
         [String]$sheet_name = $resource_config.excel_sheet_name
-        [Int]$output_column = $resource_config.format.Length + 1
+        [Int]$output_column = $resource_config.excel_format.Length + 1
         try { $sheet = $this.workbook.Worksheets.Item($sheet_name) }
         catch { throw Format-Error -Message "Sheet '$sheet_name' could not be opened" -Cause $_.Exception.Message }
 
         $num_rows = $sheet.UsedRange.Rows.Count
-        [Hashtable[]]$data = @()
+        $data_packets = @()
 
         for ($row = 1; $row -le $num_rows; $row++) {
             # Only include data if the output-cell is empty
             if (-not $sheet.Cells.Item($row, $output_column).Text) {
-                $row_data = @{
-                    cells = @()
-                    row_index = $row
-                }
-
+                $data_packet = [DataPacket]::New(@{})
                 $is_empty = $true
                 for ($col = 1; $col -lt $output_column; $col++) {
-                    $cell_data = $sheet.Cells.Item($row, $col).Text
-                    $is_empty = ($is_empty -and ($cell_data.Trim() -eq ""))
-                    $row_data.cells += $cell_data
+                    $key = $resource_config.excel_format[$col - 1]
+                    $cell_data = $sheet.Cells.Item($row, $col).Text.Split([System.Environment]::NewLine).Trim()
+                    $is_empty = ($is_empty -and ($cell_data -eq ""))
+                    $data_packet.data[$key] = $cell_data
                 }
 
-                if (-not $is_empty) { $data += $row_data }
+                if (-not $is_empty) { $data_packets += $data_packet }
             }
         }
 
-        return $data 
+        return $data_packets
     }
 
-    [DataPacket]ParseToIntermediate ([Hashtable]$resource_config, [DataPacket]$data) {
-        return & $resource_config.excel_parser -data $data
+    [DataPacket[]]ParseToIntermediate ([Hashtable]$resource_config, [DataPacket]$data_packet) {
+        return & $resource_config.excel_parser -data_packet $data_packet
     }
 
     [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {
@@ -165,6 +179,30 @@ class ExcelHandle : IOHandle {
     }
 }
 
+function SplitServicerequestsInExcelData ([DataPacket]$data_packet) {
+    [String[]]$req = $data_packet.data.all_servicerequests
+    if ($req.Count -gt 0) { $data_packet.data["servicerequest"] = $req[0] }
+    if ($req.Count -gt 1) { $data_packet.data["updaterequests"] = $req[1..$req.Count] }
+    $data_packet.data.Remove("all_servicerequests")
+    return $data_packet
+}
+
+function RulesDataFromExcelData ([DataPacket]$data_paket) {
+    [String[]]$gateways = @()
+    [DataPacket[]]$data_packets = @()
+    if ($data_packet.data["t0_internet"]) { $gateways += "T0 Internet" }
+    if ($data_packet.data["t1_payload"] -or $gateways.Count -eq 0) { $gateways += "T1 Payload" }
+    $data_packet.data.Remove("t0_internet")
+    $data_packet.data.Remove("t1_payload")
+    $data_packet = SplitServicerequestsInExcelData $data_packet
+    foreach ($gateway in $gateways) {
+        [DataPacket]$new_packet = [DataPacket]::New((DeepCopy $data_packet.data))
+        $new_packet.data["gateway"] = $gateway
+        $data_packets += $new_packet
+    }
+    return $data_packets
+}
+
 class JsonHandle : IOHandle {
     [Hashtable]$input_data
 
@@ -172,22 +210,13 @@ class JsonHandle : IOHandle {
         $this.input_data = $raw_json | ConvertFrom-Json | ConvertTo-Hashtable
     }
 
-    [Hashtable[]] GetResourceData ([Hashtable]$resource_config) {
-        $data = @($this.input_data[$resource_config.field_name])
-        if (-not $data) { return @() }
-        if (-not $data -is [Hashtable[]]) { throw "Received invalid json format" }
-        [Hashtable[]]$output_data = @()
-        for ($i = 0; $i -lt $data.Length; $i++) {
-            $packet = @()
-            foreach ($key in $resource_config.format | ForEach-Object { $_.field_name }) {
-                $packet += Join $data[$i][$key] "`n"
-            }
-            $output_data += @{
-                row_index = $i
-                cells = $packet
-            }
-        }
-        return $output_data
+    [DataPacket[]] GetResourceData ([Hashtable]$resource_config) {
+        return CollapseNested @($this.input_data[$resource_config.field_name]) $resource_config.json_nesting `
+        | ForEach-Object { [DataPacket]::New($_) }
+    }
+
+    [DataPacket[]]ParseToIntermediate ([Hashtable]$resource_config, [DataPacket]$data_packet) {
+        return & $resource_config.json_parser -data_packet $data_packet
     }
 
     [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {
