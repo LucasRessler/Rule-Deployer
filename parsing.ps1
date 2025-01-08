@@ -1,3 +1,5 @@
+using module ".\io_handle.psm1"
+
 function ParseIntermediate {
     param(
         [Hashtable]$format,
@@ -19,13 +21,14 @@ function ParseIntermediate {
             else { ".*" }
         $value = ` # If generator is specified, use it to create the value
             if ($generator) { & $generator -data $data_packet.data }
-            else { $value = $data_packet.data[$key].Trim() }
+            else { $data_packet.data[$key] }
 
         if (-not $value) {
             if (-not $format[$key]["is_optional"]) { $errors += "Missing ${dbg_name}" }
             continue
         }
 
+        $value = $value.Trim()
         if ($format[$key]["is_unique"] -and $unique_check_map) {
             if ($unique_check_map[$key]) {
                 if ($unique_check_map[$key][$value]) {
@@ -58,11 +61,16 @@ function ParseIntermediate {
             catch { $errors += Format-Error -Message "Invalid ${dbg_name}" -Cause $_.Exception.Message }
         }
 
-        $parsed_packet[$key] = $value
+        $parsed_packet.data[$key] = $value
     }
 
     if ($errors) { throw $errors -join "`n" }
-    else { return $parsed_packet }
+    foreach ($k in $format.Keys) { $data_packet.data.Remove($k) }
+    foreach ($k in $data_packet.data.Keys) {
+        $v = $data_packet.data[$k] 
+        if ($v) { Write-Warning "Value will be ignored: {'$k': '$v'}" }
+    }
+    return $parsed_packet
 }
 
 # Sub- and Post-Parsers
