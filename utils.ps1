@@ -43,17 +43,17 @@ function ConvertTo-Hashtable {
 
     process {
         function ConvertRecursive ([Object]$obj) {
-            if ($obj -is [PSCustomObject]) {
-                [Hashtable]$hash = @{}
-                foreach ($key in $obj.PSObject.Properties.Name) { 
-                    $hash[$key] = ConvertRecursive $obj.$key
-                }
-                return $hash
-            } elseif ($obj -is [Array]) {
+            if ($obj -is [Array]) {
                 return @($obj | ForEach-Object {
                     if ($_ -is [String] -or $_ -is [Boolean] -or $_ -is [Int] -or $_ -is [Double]) { $_ }
                     else { ConvertRecursive $_ }
                 })
+            } elseif ($obj -is [PSCustomObject]) {
+                [Hashtable]$hash = @{}
+                foreach ($key in $obj.PSObject.Properties.Name) {
+                    $hash[$key] = ConvertRecursive $obj.$key
+                }
+                return $hash
             } else {
                 return $obj
             }
@@ -81,4 +81,70 @@ function DeepCopy ([Hashtable]$source) {
     else { $copy[$key] = $value }
    } 
    $copy
+}
+
+function CollapseNested ($nested_obj, [String[]]$keys) {
+    if ($keys.Count -gt 0 -and $nested_obj -is [Hashtable]) {
+        $result = @()
+        foreach ($val in $nested_obj.Keys) {
+            $inner = $nested_obj[$val]
+            $collapsed = if ($inner -is [Hashtable]) { CollapseNested $inner $keys[1..$keys.Count] } else { $inner }
+            try { $result += $collapsed | ForEach-Object { $_[$keys[0]] = $val; $_ } }
+            catch { return $nested_obj }
+        }
+        return $result
+    } else { $nested_obj }
+}
+
+function ExpandCollapsed ($collapsed_obj, [String[]]$keys) {
+    if (-not $keys.Count) { return $collapsed_obj }
+    $f_map = @{}; $r_map = @{}
+    foreach ($map in $collapsed_obj) {
+        $vals = $map["$($keys[0])"]; $new_map = @{}
+        foreach ($key in $map.Keys) { if ($key -ne $keys[0]) { $new_map[$key] = $map[$key] } }
+        foreach ($val in $vals) {
+            if ($f_map["$val"]) { $f_map["$val"] += $new_map }
+            else { $f_map["$val"] = @($new_map) }
+        }
+    }
+    foreach ($val in $f_map.Keys) { $r_map[$val] = ExpandCollapsed $f_map[$val] $keys[1..$keys.Count] }
+    return $r_map
+}
+
+function CustomConvertToJson {
+    param (
+        $obj,
+        [Int]$ilv = 0,
+        [String]$ind = "    ",
+        [String]$key = $null
+    )
+
+    [String]$out = $ind * $ilv
+    if ($key) { $out += "`"$key`": " }
+    switch ($true) {
+        ($obj -is [Array]) {
+            $out += "["; $comma = $false
+            foreach ($sub in $obj) {
+                if ($comma) { $out += ","} else { $comma = $true }
+                $out += "`n" + (CustomConvertToJson $sub ($ilv + 1) $ind)
+            }
+            return "$out$(if ($comma) { "`n" + $ind * $ilv })]"
+        }
+
+        ($obj -is [Hashtable]) {
+            $keys = $obj.Keys
+            [Array]::Sort($keys)
+            $out += "{"; $comma = $false
+            foreach ($key in $keys) {
+                if ($comma) { $out += ","} else { $comma = $true }
+                $out += "`n" + (CustomConvertToJson -key $key -obj $obj[$key] -ilv ($ilv + 1) -ind $ind)
+            }
+            return "${out}$(if ($comma) { "`n" + $ind * $ilv })}"
+        }
+
+        ($obj -is [Int] -or $obj -is [Double]) { return "${out}${obj}" }
+        ($obj -is [Bool]) { return "${out}$(if ($obj) { "true" } else { "false" })"}
+        ($obj -is [String]) { return "${out}`"$obj`"" }
+        ($null -eq $obj) { return "${out}null"}
+    }
 }
