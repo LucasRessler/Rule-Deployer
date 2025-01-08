@@ -1,3 +1,10 @@
+using module ".\utils.psm1"
+using module ".\api_handle.psm1"
+using module ".\io_handle.psm1"
+using module ".\resource_configs.ps1"
+using module ".\parsing.ps1"
+using module ".\converters.ps1"
+
 [CmdletBinding()]
 param (
     [String]$ConfigPath = "$PSScriptRoot\arcaignis.json",
@@ -6,15 +13,9 @@ param (
     [String]$Action
 )
 
-. "$PSScriptRoot/utils.ps1"
-. "$PSScriptRoot/resource_configs.ps1"
-. "$PSScriptRoot/api_handle.ps1"
-. "$PSScriptRoot/io_handle.ps1"
-. "$PSScriptRoot/parsing.ps1"
-. "$PSScriptRoot/converters.ps1"
-
 function Get-Config ([String]$conf_path) {
-    $config = Get-Content $conf_path | ConvertFrom-Json
+    try { $config = Get-Content $conf_path -ErrorAction Stop | ConvertFrom-Json }
+    catch { throw Format-Error -Message "The config could not be loaded" -cause $_.Exception.Message }
     $faults = Assert-Format $config @{
         nsx_image_path = @{}
         api = @{
@@ -87,30 +88,30 @@ function HandleDataSheet {
     # Get Raw Data
     PrintDivider
     Write-Host "Loading data for $sheet_name..."
-    [Hashtable[]]$raw_data = $io_handle.GetResourceData($resource_config)
-    [Int]$num_data = $raw_data.Length
+    [DataPacket[]]$raw_data = $io_handle.GetResourceData($resource_config)
+    [DataPacket[]]$intermediate_data = @($raw_data | ForEach-Object { $io_handle.ParseToIntermediate($resource_config, $_) })
+    [Int]$num_data = $intermediate_data.Count
     if ($num_data -eq 0) { Write-Host "Nothing to do!"; return }
 
     # Parse Data
     [Hashtable]$unique_check_map = @{}
-    [Hashtable[]]$to_deploy = @()
+    [DataPacket[]]$to_deploy = @()
     Write-Host "Parsing data for $num_data resource$(PluralityIn $num_data)..."
     for ($i = 0; $i -lt $num_data; $i++) {
         ShowPercentage $i $num_data
-        [Hashtable]$data = $raw_data[$i]
-
-        try {
-            $to_deploy += @{
-                data = ParseDataSheet -data $data -format $resource_config.format -unique_check $unique_check_map
-                row_index = $data.row_index
-            }
-        } catch {
+        $parse_intermediate_params = @{
+            data_packet = $intermediate_data[$i]
+            format = $resource_config.format
+            unique_check_map = $unique_check_map
+        }
+        try { $to_deploy += ParseIntermediate @parse_intermediate_params }
+        catch {
             [String]$err_message = $_.Exception.Message
             [String]$short_info = $err_message.Split(":")[0]
-            [String]$message = "->> Parse error in ${sheet_name}: $err_message"
+            [String]$message = "Parse error in ${sheet_name}: $err_message"
             [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.parse_error, $data.row_index)
             $Host.UI.WriteErrorLine($message)
-            $io_handle.UpdateOutput($resource_config, $val)
+            # $io_handle.UpdateOutput($resource_config, $val)
         }
     }
 
@@ -118,14 +119,6 @@ function HandleDataSheet {
     Write-Host "$num_to_deploy/$num_data parsed successfully$(Punctuate $num_to_deploy $num_data)"
     if ($num_to_deploy -eq 0) { NothingMoreToDo; return }
 
-    # Expand Data
-    if ($resource_config.expander) {
-        $to_deploy = $to_deploy | ForEach-Object { & $resource_config.expander -data $_ }
-        if ($to_deploy.Length -gt $num_to_deploy) {
-            $num_to_deploy = $to_deploy.Length
-            Write-Host "Expanded data to $num_to_deploy API calls!"
-        }
-    }
 
     [String]$last_action = $null
     foreach ($action in $actions) {
@@ -241,12 +234,16 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
     # very dangerously disabling validating certification
     [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
     [ApiHandle]$api_handle = [ApiHandle]::New($config, $tenant) # might throw
-
     [IOHandle]$io_handle = if ($inline_json) {
-        [JsonHandle]::New($inline_json, $config.nsx_image_path) # might throw
+        [JsonHandle]::New($inline_json, $config.nsx_image_path)
     } else {
         Write-Host "Opening Excel-instance..."
-        [ExcelHandle]::New($config.excel.filepath, $config.nsx_image_path) # might throw
+        $excel_handle = [ExcelHandle]::New($config.nsx_image_path)
+        while ($true) {
+            try { $excel_handle.Open($config.excel.filepath); break }
+            catch { $excel_handle.Release(); Write-Host "Failed. Trying again..."; Start-Sleep 1 }
+        }
+        $excel_handle 
     }
 
     $actions_str = Join ($actions | ForEach-Object { "$_".ToLower() }) "/"
