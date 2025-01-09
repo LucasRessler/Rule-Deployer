@@ -6,6 +6,7 @@ function Get-SecurityGroupsConfig ([Hashtable]$config) {
             name = @{
                 dbg_name = "Security Group Name"
                 regex = $config.regex.resource_name
+                required_for_delete = $true
                 is_unique = $true
             }
             ip_addresses = @{
@@ -59,6 +60,10 @@ function Get-SecurityGroupsConfig ([Hashtable]$config) {
             param ([Hashtable]$data, [ApiAction]$action)
             ConvertSecurityGroupsData $data $action
         }
+        img_converter = {
+            param ([Hashtable]$data, [ApiAction]$action)
+            ImageFromSecurityGroup $data $action
+        }
     }
 }
 
@@ -68,6 +73,7 @@ function Get-ServicesConfig ([Hashtable]$config) {
             name = @{
                 dbg_name = "Service Name"
                 regex = $config.regex.resource_name
+                required_for_delete = $true
                 is_unique = $true
             }
             ports = @{
@@ -123,7 +129,7 @@ function Get-RulesConfig ([Hashtable]$config) {
     @{
         format = @{
             unique_key = @{
-                dbg_name = "Deployment Identifier"
+                dbg_name = "Resource Identifier"
                 is_unique = $true
                 generator = {
                     param([Hashtable]$data)
@@ -185,15 +191,18 @@ function Get-RulesConfig ([Hashtable]$config) {
                 dbg_name = "Gateway"
                 regex_info = "Must be one either 'T0 Internet' or 'T1 Payload'"
                 regex = "T0 Internet|T1 Payload"
+                required_for_delete = $true
             }
             index = @{
                 dbg_name = "NSX-Index"
                 regex_info = "Must be an integer greater than 0"
                 regex = "[1-9][0-9]*"
+                required_for_delete = $true
             }
             servicerequest = @{
                 dbg_name = "Initial Servicerequest"
                 regex = $config.regex.servicerequest
+                required_for_delete = $true
             }
             updaterequests = @{
                 dbg_name = "Update Servicerequest"
