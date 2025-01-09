@@ -132,7 +132,7 @@ function CustomConvertToJson {
         }
 
         ($obj -is [Hashtable]) {
-            $keys = $obj.Keys
+            [String[]]$keys = $obj.Keys
             [Array]::Sort($keys)
             $out += "{"; $comma = $false
             foreach ($key in $keys) {
@@ -142,9 +142,8 @@ function CustomConvertToJson {
             return "${out}$(if ($comma) { "`n" + $ind * $ilv })}"
         }
 
-        ($obj -is [Int] -or $obj -is [Double]) { return "${out}${obj}" }
-        ($obj -is [Bool]) { return "${out}$(if ($obj) { "true" } else { "false" })"}
-        ($obj -is [String]) { return "${out}`"$obj`"" }
         ($null -eq $obj) { return "${out}null"}
+
+        default { return "${out}$($obj.ToString() | ConvertTo-Json -Depth 1)"}
     }
 }
