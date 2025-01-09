@@ -4,7 +4,8 @@ function ParseIntermediate {
     param(
         [Hashtable]$format,
         [DataPacket]$data_packet,
-        [Hashtable]$unique_check_map
+        [Hashtable]$unique_check_map,
+        [Bool]$only_deletion
     )
 
     [String[]]$errors = @()
@@ -24,7 +25,9 @@ function ParseIntermediate {
             else { $data_packet.data[$key] }
 
         if (-not $value) {
-            if (-not $format[$key]["is_optional"]) { $errors += "Missing ${dbg_name}" }
+            [Bool]$optional_for_delete = -not $format[$key]["required_for_deletion"] 
+            [Bool]$optional = $format[$key]["is_optional"] -or ($only_deletion -and $optional_for_delete)
+            if (-not $optional) { $errors += "Missing ${dbg_name}" }
             continue
         }
 
