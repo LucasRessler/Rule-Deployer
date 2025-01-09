@@ -48,6 +48,7 @@ class IOHandle {
         }
 
         function update_recursive([Hashtable]$source, [Hashtable]$target, [Bool]$delete) {
+            [String]$date = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
             foreach ($key in $source.Keys) {
                 $value = $source[$key]
                 if ($value -is [Hashtable]) {
@@ -55,6 +56,8 @@ class IOHandle {
                     update_recursive $value $target[$key] $delete
                     if ($delete -and (is_leaf $target[$key])) { $target.Remove($key) }
                 } elseif (-not $delete) {
+                    if ($action -eq [ApiAction]::Create) { $target["date_creation"] = $date }
+                    else { $target["date_last_update"] = $date }
                     $target[$key] = $value
                 }
             }
