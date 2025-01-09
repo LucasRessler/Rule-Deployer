@@ -1,5 +1,9 @@
+using module ".\utils.psm1"
+using module ".\io_handle.psm1"
+
 $TEST_PREFIX = "Arca-Ignis---"
 
+# API Converters
 function ConvertSecurityGroupsData ([Hashtable]$data, [ApiAction]$action) {
     [String]$name = "$TEST_PREFIX$($data.name)"
     if ($action -eq [ApiAction]::Delete) {
@@ -64,7 +68,7 @@ function ConvertServicesData ([Hashtable]$data, [ApiAction]$action) {
 }
 
 function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
-    $name = "${TEST_PREFIX}$name"
+    $name = "${TEST_PREFIX}$($data.name)"
     if ($action -eq [ApiAction]::Delete) {
         return @{
             action = "$action"
@@ -88,5 +92,29 @@ function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
 
     if ($data.comment) { $body["comment"] = $data.comment }
     if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = $name }
+    $body
+}
+
+# Image Converters
+function ImageFromSecurityGroup ([Hashtable]$data, [ApiAction]$action) {
+    [String]$name = "$TEST_PREFIX$($data.name)"
+    if ($action -eq [ApiAction]::Delete) {
+        return @{
+            action = "$action"
+            elementsToDelete = @("$name (IPSET)")
+        }
+    }
+
+    $body = @{
+            action = "$action"
+            name = $name
+            groupType = "IPSET"
+            ipAddress = Join @($data.ip_addresses | ForEach-Object { Join @($_.address, $_.net) "/" }) ", "
+    }
+
+    [String]$requests = Join @($data.servicerequest, $data.updaterequests) ", "
+    [String]$description = Join @($requests, $data.hostname, $data.comment) " - "
+    if ($description) { $body["description"] = $description }
+    if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = "$name (IPSET)" }
     $body
 }
