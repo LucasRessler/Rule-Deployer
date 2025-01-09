@@ -13,6 +13,8 @@ param (
     [String]$Action
 )
 
+[Int]$EXCEL_OPEN_ATTEMPTS = 3
+
 function Get-Config ([String]$conf_path) {
     try { $config = Get-Content $conf_path -ErrorAction Stop | ConvertFrom-Json }
     catch { throw Format-Error -Message "The config could not be loaded" -cause $_.Exception.Message }
@@ -100,6 +102,7 @@ function HandleDataSheet {
     for ($i = 0; $i -lt $num_data; $i++) {
         ShowPercentage $i $num_data
         $parse_intermediate_params = @{
+            only_deletion = -not ([ApiAction]::Create -in $actions -or [ApiAction]::Update -in $actions)
             data_packet = $intermediate_data[$i]
             format = $resource_config.format
             unique_check_map = $unique_check_map
@@ -108,7 +111,7 @@ function HandleDataSheet {
         catch {
             [String]$err_message = $_.Exception.Message
             [String]$short_info = $err_message.Split(":")[0]
-            [String]$message = "Parse error in ${sheet_name}: $err_message"
+            [String]$message = Format-Error -Message "Parse error in ${sheet_name}" -Cause "$err_message"
             [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.parse_error, $data.row_index)
             $Host.UI.WriteErrorLine($message)
             # $io_handle.UpdateOutput($resource_config, $val)
@@ -150,7 +153,7 @@ function HandleDataSheet {
                 [String]$message = "->> Deploy error in ${sheet_name}: $($_.Exception.Message)"
                 [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $to_deploy[$i].row_index)
                 $Host.UI.WriteErrorLine($message)
-                $io_handle.UpdateOutput($resource_config, $val)
+                # $io_handle.UpdateOutput($resource_config, $val)
             }
 
             Start-Sleep $resource_config.ddos_sleep_time # Mandatory because of DDoS protection probably
@@ -172,7 +175,7 @@ function HandleDataSheet {
                 [String]$short_info = "$action Successful"
                 [String]$message = "Resource at row $($deployment.row_index) in $sheet_name was ${$action_verb}d successfully."
                 [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.success, $deployment.row_index)
-                $io_handle.UpdateOutput($resource_config, $val)
+                # $io_handle.UpdateOutput($resource_config, $val)
             } else {
                 $to_deploy += @{
                     data = $deployment.preconverted
@@ -195,7 +198,7 @@ function HandleDataSheet {
         [String]$message = "->> $requests_str for resource at $row_index in $sheet_name failed"
         [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $row_index)
         $Host.UI.WriteErrorLine($message)
-        $io_handle.UpdateOutput($resource_config, $val)
+        # $io_handle.UpdateOutput($resource_config, $val)
     }
 
     NothingMoreToDo
@@ -238,11 +241,13 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
         [JsonHandle]::New($inline_json, $config.nsx_image_path)
     } else {
         Write-Host "Opening Excel-instance..."
-        $excel_handle = [ExcelHandle]::New($config.nsx_image_path)
-        while ($true) {
-            try { $excel_handle.Open($config.excel.filepath); break }
+        [ExcelHandle]$excel_handle = [ExcelHandle]::New($config.nsx_image_path)
+        [Bool]$opened = $false
+        foreach ($_ in 0..$EXCEL_OPEN_ATTEMPTS) {
+            try { $excel_handle.Open($config.excel.filepath); $opened = $true; break }
             catch { $excel_handle.Release(); Write-Host "Failed. Trying again..."; Start-Sleep 1 }
         }
+        if (-not $opened) { throw "Failed to open Excel-instance. :(" }
         $excel_handle 
     }
 
