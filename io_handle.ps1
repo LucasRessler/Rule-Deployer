@@ -8,9 +8,18 @@ enum ApiAction {
 
 class DataPacket {
     [Hashtable]$data
+    [String]$tenant
+    [Int]$row_index
 
-    DataPacket ([Hashtable]$data) {
+    DataPacket ([Hashtable]$data, [String]$tenant) {
         $this.data = $data
+        $this.tenant = $tenant
+    }
+    
+    DataPacket ([Hashtable]$data, [String]$tenant, [Int]$row_index) {
+        $this.data = $data
+        $this.tenant = $tenant
+        $this.row_index = $row_index
     }
 }
 
@@ -83,8 +92,11 @@ class ExcelHandle : IOHandle {
     [__ComObject]$app
     [__ComObject]$workbook
     [Bool]$should_close
+    [String]$tenant
     
-    ExcelHandle ([String]$nsx_image_path) : base ($nsx_image_path) {}
+    ExcelHandle ([String]$nsx_image_path, [String]$tenant) : base ($nsx_image_path) {
+        $this.tenant = $tenant
+    }
 
     [Void] Open([String]$file_path) {
         try {
@@ -127,7 +139,7 @@ class ExcelHandle : IOHandle {
         for ($row = 1; $row -le $num_rows; $row++) {
             # Only include data if the output-cell is empty
             if (-not $sheet.Cells.Item($row, $output_column).Text) {
-                $data_packet = [DataPacket]::New(@{})
+                $data_packet = [DataPacket]::New(@{}, $this.tenant, $row)
                 $is_empty = $true
                 for ($col = 1; $col -lt $output_column; $col++) {
                     $key = $resource_config.excel_format[$col - 1]
@@ -148,7 +160,7 @@ class ExcelHandle : IOHandle {
     }
 
     [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {
-        [Int]$output_column = $resource_config.format.Length + 1
+        [Int]$output_column = $resource_config.excel_format.Length + 1
         [String]$sheet_name = $resource_config.excel_sheet_name
         $this.log += $value.message
         try { $sheet = $this.workbook.Worksheets.Item($sheet_name) }
@@ -199,7 +211,7 @@ function RulesDataFromExcelData ([DataPacket]$data_paket) {
     $data_packet.data.Remove("t1_payload")
     $data_packet = SplitServicerequestsInExcelData $data_packet
     foreach ($gateway in $gateways) {
-        [DataPacket]$new_packet = [DataPacket]::New((DeepCopy $data_packet.data))
+        [DataPacket]$new_packet = [DataPacket]::New((DeepCopy $data_packet.data), $data_packet.tenant, $data_packet.row_index)
         $new_packet.data["gateway"] = $gateway
         $data_packets += $new_packet
     }
@@ -209,13 +221,18 @@ function RulesDataFromExcelData ([DataPacket]$data_paket) {
 class JsonHandle : IOHandle {
     [Hashtable]$input_data
 
-    JsonHandle ([String]$raw_json, [String]$nsx_image_path) : base ($nsx_image_path) {
-        $this.input_data = $raw_json | ConvertFrom-Json | ConvertTo-Hashtable
+    JsonHandle ([String]$raw_json, [String]$nsx_image_path, [String]$tenant) : base ($nsx_image_path) {
+        [Hashtable]$data = $raw_json | ConvertFrom-Json | ConvertTo-Hashtable
+        $this.input_data =  if ($tenant) { @{ $tenant = $data } } else { $data }
     }
 
     [DataPacket[]] GetResourceData ([Hashtable]$resource_config) {
-        return CollapseNested @($this.input_data[$resource_config.field_name]) $resource_config.json_nesting `
-        | ForEach-Object { [DataPacket]::New($_) }
+        return @($this.input_data.Keys | ForEach-Object {
+            [String]$tenant = $_
+            $raw = $this.input_data[$tenant][$resource_config.field_name]
+            if ($raw) { CollapseNested @($raw) $resource_config.json_nesting `
+            | ForEach-Object { [DataPacket]::New($_, $tenant) } }
+        })
     }
 
     [DataPacket[]]ParseToIntermediate ([Hashtable]$resource_config, [DataPacket]$data_packet) {
