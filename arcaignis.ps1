@@ -101,27 +101,27 @@ function HandleDataSheet {
     Write-Host "Parsing data for $num_data resource$(PluralityIn $num_data)..."
     for ($i = 0; $i -lt $num_data; $i++) {
         ShowPercentage $i $num_data
+        [DataPacket]$data_packet = $intermediate_data[$i]
         $parse_intermediate_params = @{
             only_deletion = -not ([ApiAction]::Create -in $actions -or [ApiAction]::Update -in $actions)
-            data_packet = $intermediate_data[$i]
+            data_packet = $data_packet
             format = $resource_config.format
             unique_check_map = $unique_check_map
         }
         try { $to_deploy += ParseIntermediate @parse_intermediate_params }
         catch {
             [String]$err_message = $_.Exception.Message
-            [String]$short_info = $err_message.Split(":")[0]
+            [String]$short_info = $err_message.Split([System.Environment]::NewLine)[0].Split(":")[0]
             [String]$message = Format-Error -Message "Parse error in ${sheet_name}" -Cause "$err_message"
-            [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.parse_error, $data.row_index)
+            [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.parse_error, $data_packet.row_index)
             $Host.UI.WriteErrorLine($message)
-            # $io_handle.UpdateOutput($resource_config, $val)
+            $io_handle.UpdateOutput($resource_config, $val)
         }
     }
 
     [Int]$num_to_deploy = $to_deploy.Length
     Write-Host "$num_to_deploy/$num_data parsed successfully$(Punctuate $num_to_deploy $num_data)"
     if ($num_to_deploy -eq 0) { NothingMoreToDo; return }
-
 
     [String]$last_action = $null
     foreach ($action in $actions) {
@@ -139,12 +139,13 @@ function HandleDataSheet {
         for ($i = 0; $i -lt $num_to_deploy; $i++) {
             ShowPercentage $i $num_to_deploy
             [Hashtable]$data = $to_deploy[$i].data
+            [String]$tenant = $to_deploy[$i].tenant
             [String]$deployment_name = "$action $($resource_config.resource_name) - $(Get-Date -UFormat %s -Millisecond 0) - LR Automation"
 
             try {
                 [Hashtable]$inputs = & $resource_config.converter -data $data -action $action
                 $deployed += @{
-                    id = $api_handle.Deploy($deployment_name, $resource_config.catalog_id, $inputs)
+                    id = $api_handle.Deploy($deployment_name, $tenant, $resource_config.catalog_id, $inputs)
                     row_index = $to_deploy[$i].row_index 
                     preconverted = $data
                 }
@@ -153,10 +154,10 @@ function HandleDataSheet {
                 [String]$message = "->> Deploy error in ${sheet_name}: $($_.Exception.Message)"
                 [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $to_deploy[$i].row_index)
                 $Host.UI.WriteErrorLine($message)
-                # $io_handle.UpdateOutput($resource_config, $val)
+                $io_handle.UpdateOutput($resource_config, $val)
             }
 
-            Start-Sleep $resource_config.ddos_sleep_time # Mandatory because of DDoS protection probably
+            # Start-Sleep $resource_config.ddos_sleep_time # Mandatory because of DDoS protection probably
         }
         
         [Int]$num_deployed = $deployed.Length
@@ -175,7 +176,7 @@ function HandleDataSheet {
                 [String]$short_info = "$action Successful"
                 [String]$message = "Resource at row $($deployment.row_index) in $sheet_name was ${$action_verb}d successfully."
                 [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.success, $deployment.row_index)
-                # $io_handle.UpdateOutput($resource_config, $val)
+                $io_handle.UpdateOutput($resource_config, $val)
             } else {
                 $to_deploy += @{
                     data = $deployment.preconverted
@@ -198,7 +199,7 @@ function HandleDataSheet {
         [String]$message = "->> $requests_str for resource at $row_index in $sheet_name failed"
         [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $row_index)
         $Host.UI.WriteErrorLine($message)
-        # $io_handle.UpdateOutput($resource_config, $val)
+        $io_handle.UpdateOutput($resource_config, $val)
     }
 
     NothingMoreToDo
@@ -232,16 +233,18 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
         }
     }
 
-    if (-not $tenant) { throw "Please provide a tenant name" }
     Write-Host "Initialising communication with API..."
     # very dangerously disabling validating certification
     [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-    [ApiHandle]$api_handle = [ApiHandle]::New($config, $tenant) # might throw
+    [ApiHandle]$api_handle = [ApiHandle]::New($config); $api_handle.Init() # might throw
     [IOHandle]$io_handle = if ($inline_json) {
-        [JsonHandle]::New($inline_json, $config.nsx_image_path)
+        Write-Host "Loading JSON-data..."
+        if ($tenant) { $Host.UI.WriteWarningLine("Since commandline argument Tenant=$tenant was provided, json data will be altered! It's recommended to provide tenants only via inline json!") }
+        [JsonHandle]::New($inline_json, $config.nsx_image_path, $tenant)
     } else {
         Write-Host "Opening Excel-instance..."
-        [ExcelHandle]$excel_handle = [ExcelHandle]::New($config.nsx_image_path)
+        if (-not $tenant) { throw "Please provide a tenant name" }
+        [ExcelHandle]$excel_handle = [ExcelHandle]::New($config.nsx_image_path, $tenant)
         [Bool]$opened = $false
         foreach ($_ in 0..$EXCEL_OPEN_ATTEMPTS) {
             try { $excel_handle.Open($config.excel.filepath); $opened = $true; break }
