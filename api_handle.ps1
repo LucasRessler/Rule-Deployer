@@ -5,26 +5,39 @@ enum DeploymentStatus {
 }
 
 class ApiHandle {
-    [String]$project_id
     [Hashtable]$headers
+    [Hashtable]$tenant_map
+    [String]$refresh_token
 
+    [String]$username
+    [String]$password
+
+    [String]$url_refresh_token
     [String]$url_deployments
+    [String]$url_project_id
     [String]$url_items
+    [String]$url_login
     
-    ApiHandle ([Hashtable]$config, [String]$tenant) {
+    ApiHandle ([Hashtable]$config) {
+        $this.username = $config.api.credentials.username
+        $this.password = $config.api.credentials.password
+        $this.url_refresh_token = $config.api.urls.refresh_token
         $this.url_deployments = $config.api.urls.deployments
+        $this.url_project_id = $config.api.urls.project_id
         $this.url_items = $config.api.urls.items
-        $username = $config.api.credentials.username
-        $password = $config.api.credentials.password
+        $this.url_login = $config.api.urls.login
+        $this.tenant_map = @{}
+    }
 
+    [Void]Init () {
         # get refresh token
         try {
             $body = @{
-                username = $username
-                password = $password
+                username = $this.username
+                password = $this.password
             } | ConvertTo-Json
-            $response = Invoke-RestMethod $config.api.urls.refresh_token -Method Post -ContentType "application/json" -Body $body -TimeoutSec 5
-            $refresh_token = $response.refresh_token
+            $response = Invoke-RestMethod $this.url_refresh_token -Method Post -ContentType "application/json" -Body $body -TimeoutSec 5
+            $this.refresh_token = $response.refresh_token
         } catch {
             throw Format-Error -Message "Failed to obtain refresh token!" -Cause $_.Exception.Message -Hints @(
                 "Ensure that you're connected to the Admin-LAN"
@@ -35,9 +48,9 @@ class ApiHandle {
         # get access token
         try {
             $body = @{
-                refreshToken = $refresh_token
+                refreshToken = $this.refresh_token
             } | ConvertTo-Json
-            $response = Invoke-RestMethod $config.api.urls.login -Method Post -ContentType "application/json" -Body $body
+            $response = Invoke-RestMethod $this.url_login -Method Post -ContentType "application/json" -Body $body
             $access_token = $response.token
 
             $this.headers = @{
@@ -48,18 +61,29 @@ class ApiHandle {
                 "Ensure your connection is stable"
             )
         }
+    }
+
+    [String]TenantID ([String]$tenant) {
+        [String]$failed = "-1"
+        [String]$cached = $this.tenant_map[$tenant]
+        if ($cached -eq $failed) { throw "Tenant $tenant cannot be accessed" }
+        elseif ($cached) { return $this.tenant_map[$tenant] }
 
         # get project id
         try {
-            $url = "$($config.api.urls.project_id)?`$filter=name eq '$tenant'" 
+            $url = "$($this.url_project_id)?`$filter=name eq '$tenant'" 
             $response = Invoke-RestMethod $url -Method Get -Headers $this.headers
         } catch {
-            throw Format-Error -Message "Failed to get project id!" -Cause $_.Exception.Message
+            $this.tenant_map[$tenant] = $failed
+            throw Format-Error -Message "Failed to get project id for tenant '$tenant'!" -Cause $_.Exception.Message
         }
 
         if ($response.content.Length -eq 1) {
-            $this.project_id = $response.content[0].id
+            [String]$id = $response.content[0].id
+            $this.tenant_map[$tenant] = $id
+            return $id
         } else {
+            $this.tenant_map[$tenant] = $failed
             throw Format-Error -Message "Failed to get project id!" -Hints @(
                 "Expected exactly 1 project with the given Tenant name, found $($response.content.Length)"
                 "Maybe '$tenant' is not a valid tenant name?"
@@ -74,14 +98,14 @@ class ApiHandle {
         return Invoke-RestMethod $url -Method Post -ContentType "application/json" -Headers $this.headers -Body ($body | ConvertTo-Json)
     }
 
-    [String] Deploy ([String]$name, [String]$catalog_id, [Hashtable]$inputs) {
+    [String] Deploy ([String]$name, [String]$tenant, [String]$catalog_id, [Hashtable]$inputs) {
         $body = @{
+            projectId = $this.TenantID($tenant)
             deploymentName = $name
-            projectId = $this.project_id
             inputs = $inputs
         }
 
-        Write-Host ($body | ConvertTo-Json)
+        # Write-Host "body: $($body | ConvertTo-Json)"
         throw "Explicit Cancel"
 
         $response = $this.Post("$($this.url_items)/$catalog_id/request", $body)
