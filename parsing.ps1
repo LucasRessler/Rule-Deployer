@@ -9,10 +9,11 @@ function ParseIntermediate {
     )
 
     [String[]]$errors = @()
-    [DataPacket]$parsed_packet = [DataPacket]::New(@{})
+    [DataPacket]$parsed_packet = [DataPacket]::New(@{}, $data_packet.tenant, $data_packet.row_index)
 
     foreach ($key in $format.Keys) {
         $dbg_name = $format[$key]["dbg_name"]
+        $is_array = $format[$key]["is_array"]
         $generator = $format[$key]["generator"]
         $subparser = $format[$key]["subparser"]
         $postparser = $format[$key]["postparser"]
@@ -32,6 +33,7 @@ function ParseIntermediate {
         }
 
         $value = $value.Trim()
+        if (-not $is_array) { $value = $value -join "`n" }
         if ($format[$key]["is_unique"] -and $unique_check_map) {
             if ($unique_check_map[$key]) {
                 if ($unique_check_map[$key][$value]) {
@@ -46,17 +48,17 @@ function ParseIntermediate {
         }
 
         $value = @($value) | ForEach-Object {
-            if (-not [Regex]::IsMatch($value, "^$regex$")) {
-                $errors += Format-Error -Message "Invalid ${dbg_name}: '$value'" -Hints @($regex_info)
+            if (-not [Regex]::IsMatch($_, "^$regex$")) {
+                $errors += Format-Error -Message "Invalid ${dbg_name}: '$_'" -Hints @($regex_info)
             }
             if ($subparser) {
-                try { & $subparser -value $value }
+                try { & $subparser -value $_ }
                 catch {
-                    $errors += Format-Error -Message "Invalid ${dbg_name}: '$value'" -Cause $_.Exception.Message
+                    $errors += Format-Error -Message "Invalid ${dbg_name}: '$_'" -Cause $_.Exception.Message
                     continue
                 }
             }
-            else { $value }
+            else { $_ }
         }
 
         if ($postparser) {
@@ -67,7 +69,8 @@ function ParseIntermediate {
         $parsed_packet.data[$key] = $value
     }
 
-    if ($errors) { throw $errors -join "`n" }
+    if ($errors.Count -gt 1) { throw Format-Error -Message "Multiple Faults" -Hints $errors }
+    elseif ($errors.Count -eq 1) { throw $errors[0] }
     foreach ($k in $format.Keys) { $data_packet.data.Remove($k) }
     foreach ($k in $data_packet.data.Keys) {
         $v = $data_packet.data[$k] 
