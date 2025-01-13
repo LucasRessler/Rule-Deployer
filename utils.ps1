@@ -7,7 +7,7 @@ function Join ([Object[]]$arr, [String]$delim) {
 function Format-Error {
     param ([String]$message, [String]$cause, [String[]]$hints)
     if ($cause) { $message += "`n| Caused by: " + (Join $cause.Split([Environment]::NewLine) "`n| ")}
-    foreach ($hint in $hints) { $message += "`n| ->> $hint" }
+    foreach ($hint in $hints) { $message += "`n| ->> " + (Join $hint.Split([System.Environment]::NewLine) "`n|   ") }
     return $message
 }
 
