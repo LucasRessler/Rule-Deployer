@@ -9,17 +9,27 @@ enum ApiAction {
 class DataPacket {
     [Hashtable]$data
     [String]$tenant
+    [String]$origin_info
     [Int]$row_index
 
-    DataPacket ([Hashtable]$data, [String]$tenant) {
+    DataPacket ([DataPacket]$source, [Hashtable]$data) {
+        $this.data = $data
+        $this.tenant = $source.tenant
+        $this.origin_info = $source.origin_info
+        $this.row_index = $source.row_index
+    }
+
+    DataPacket ([Hashtable]$data, [String]$tenant, [String]$origin_info) {
         $this.data = $data
         $this.tenant = $tenant
+        $this.origin_info = $origin_info
     }
     
-    DataPacket ([Hashtable]$data, [String]$tenant, [Int]$row_index) {
+    DataPacket ([Hashtable]$data, [String]$tenant, [String]$origin_info, [Int]$row_index) {
         $this.data = $data
         $this.tenant = $tenant
         $this.row_index = $row_index
+        $this.origin_info = $origin_info
     }
 }
 
@@ -103,7 +113,7 @@ class ExcelHandle : IOHandle {
             Add-Type -AssemblyName System.Web
             $this.app = [Runtime.Interopservices.Marshal]::GetActiveObject('Excel.Application')
             $sanitised_file_path = if (-not $file_path.StartsWith("https://")) { $file_path }
-            else { [System.Web.HttpUtility]::UrlDecode($file_path.Split("?")[0]) }
+            else { UrlDecode($file_path.Split("?")[0]) }
             foreach ($wb in $this.app.Workbooks) {
                 if ($wb.FullName -eq $sanitised_file_path) {
                     $this.workbook = $wb
@@ -139,7 +149,8 @@ class ExcelHandle : IOHandle {
         for ($row = 1; $row -le $num_rows; $row++) {
             # Only include data if the output-cell is empty
             if (-not $sheet.Cells.Item($row, $output_column).Text) {
-                $data_packet = [DataPacket]::New(@{}, $this.tenant, $row)
+                [String]$origin_info = "row $row in $sheet_name"
+                [DataPacket]$data_packet = [DataPacket]::New(@{}, $this.tenant, $origin_info, $row)
                 $is_empty = $true
                 for ($col = 1; $col -lt $output_column; $col++) {
                     $key = $resource_config.excel_format[$col - 1]
@@ -211,7 +222,7 @@ function RulesDataFromExcelData ([DataPacket]$data_paket) {
     $data_packet.data.Remove("t1_payload")
     $data_packet = SplitServicerequestsInExcelData $data_packet
     foreach ($gateway in $gateways) {
-        [DataPacket]$new_packet = [DataPacket]::New((DeepCopy $data_packet.data), $data_packet.tenant, $data_packet.row_index)
+        [DataPacket]$new_packet = [DataPacket]::New($data_packet, (DeepCopy $data_packet.data))
         $new_packet.data["gateway"] = $gateway
         $data_packets += $new_packet
     }
@@ -222,16 +233,23 @@ class JsonHandle : IOHandle {
     [Hashtable]$input_data
 
     JsonHandle ([String]$raw_json, [String]$nsx_image_path, [String]$tenant) : base ($nsx_image_path) {
-        [Hashtable]$data = $raw_json | ConvertFrom-Json | ConvertTo-Hashtable
+        try { [Hashtable]$data = $raw_json | ConvertFrom-Json | ConvertTo-Hashtable }
+        catch { $this.Release(); throw Format-Error -Message "Received incompatible json data!" -Hints @(
+            "Ensure that your top-level json structure is an object!"
+        ) -Cause $_.Exception.Message }
         $this.input_data =  if ($tenant) { @{ $tenant = $data } } else { $data }
     }
 
     [DataPacket[]] GetResourceData ([Hashtable]$resource_config) {
         return @($this.input_data.Keys | ForEach-Object {
             [String]$tenant = $_
+            [String]$origin_info_base = "'$tenant'.'$($resource_config.field_name)'"
             $raw = $this.input_data[$tenant][$resource_config.field_name]
-            if ($raw) { CollapseNested @($raw) $resource_config.json_nesting `
-            | ForEach-Object { [DataPacket]::New($_, $tenant) } }
+            if ($raw) { CollapseNested $raw $resource_config.json_nesting `
+            | ForEach-Object { 
+                [String]$origin_info = $origin_info_base + $_["__o"]; $_.Remove("__o")
+                [DataPacket]::New($_, $tenant, $origin_info)
+            } }
         })
     }
 
