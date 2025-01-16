@@ -1,4 +1,5 @@
 using module ".\io_handle.psm1"
+using module ".\utils.psm1"
 
 function Get-SecurityGroupsConfig ([Hashtable]$config) {
     @{
@@ -133,7 +134,7 @@ function Get-RulesConfig ([Hashtable]$config) {
                 is_unique = $true
                 generator = {
                     param([Hashtable]$data)
-                    @($data.gateway, $data.servicerequest, $data.index) -join " - "
+                    Join @($data.gateway, $data.servicerequest, $data.index) " - "
                 }
             }
             name = @{
@@ -141,7 +142,7 @@ function Get-RulesConfig ([Hashtable]$config) {
                 regex = $config.regex.resource_name
                 generator = {
                     param([Hashtable]$data)
-                    @($data.servicerequest, $data.index, "Auto") -join "_"
+                    Join @($data.servicerequest, $data.index, "Auto") "_"
                 }
             }
             sources = @{
@@ -178,7 +179,7 @@ function Get-RulesConfig ([Hashtable]$config) {
                 postparser = { param($value) ParseArrayWithAny $value }
                 subparser = {
                     param($value)
-                    FailOnMatch $value $config.regex.ip_cidr (Format-Error `
+                    FailOnMatch $value $config.regex.port (Format-Error `
                         -Message "Literal port-addresses are not supported" `
                         -Hints @("Please use a Service Name or 'any'"))
                 }
@@ -231,7 +232,8 @@ function Get-RulesConfig ([Hashtable]$config) {
         ddos_sleep_time = 3.0
         json_parser = {
             param ([DataPacket]$data_packet)
-            RulesDataFromJsonData $data_packet
+            return $data_packet
+            # RulesDataFromJsonData $data_packet
         }
         excel_parser = {
             param ([DataPacket]$data_packet)
