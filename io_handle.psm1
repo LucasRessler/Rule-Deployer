@@ -237,7 +237,16 @@ class JsonHandle : IOHandle {
         catch { $this.Release(); throw Format-Error -Message "Received incompatible json data!" -Hints @(
             "Ensure that your top-level json structure is an object!"
         ) -Cause $_.Exception.Message }
-        $this.input_data =  if ($tenant) { @{ $tenant = $data } } else { $data }
+        $this.input_data =  if ($tenant) {
+            $accepted_keys = @("security_groups", "services", "rules")
+            foreach ($key in $data.Keys) {
+                if ($key -notin $accepted_keys) {
+                    throw "When using a tenant explicitly, the top-level json-structure should only contain the fields " + `
+                    $accepted_keys | ForEach-Object { "'$_'" } -join ", "
+                }
+            }
+            @{ $tenant = $data }
+        } else { $data }
     }
 
     [DataPacket[]] GetResourceData ([Hashtable]$resource_config) {
@@ -254,7 +263,7 @@ class JsonHandle : IOHandle {
     }
 
     [DataPacket[]]ParseToIntermediate ([Hashtable]$resource_config, [DataPacket]$data_packet) {
-        return & $resource_config.json_parser -data_packet $data_packet
+        return $data_packet
     }
 
     [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {
