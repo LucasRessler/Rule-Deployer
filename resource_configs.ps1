@@ -49,10 +49,6 @@ function Get-SecurityGroupsConfig ([Hashtable]$config) {
         excel_sheet_name = $config.excel.sheetnames.security_groups
         catalog_id = $config.api.catalog_ids.security_groups
         ddos_sleep_time = 1.0
-        json_parser = {
-            param ([DataPacket]$data_packet)
-            SecurityGroupsDataFromJsonData $data_packet
-        }
         excel_parser = {
             param ([DataPacket]$data_packet)
             SplitServicerequestsInExcelData $data_packet
@@ -111,10 +107,6 @@ function Get-ServicesConfig ([Hashtable]$config) {
         catalog_id = $config.api.catalog_ids.services
         excel_sheet_name = $config.excel.sheetnames.services
         ddos_sleep_time = 1.0
-        json_parser = {
-            param ([DataPacket]$data_packet)
-            ServicesDataFromJsonData $data_packet
-        }
         excel_parser = {
             param ([DataPacket]$data_packet)
             SplitServicerequestsInExcelData $data_packet
@@ -230,11 +222,6 @@ function Get-RulesConfig ([Hashtable]$config) {
         catalog_id = $config.api.catalog_ids.rules
         additional_deploy_chances = 1
         ddos_sleep_time = 3.0
-        json_parser = {
-            param ([DataPacket]$data_packet)
-            return $data_packet
-            # RulesDataFromJsonData $data_packet
-        }
         excel_parser = {
             param ([DataPacket]$data_packet)
             RulesDataFromExcelData $data_packet
