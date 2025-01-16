@@ -6,8 +6,8 @@ function Join ([Object[]]$arr, [String]$delim) {
 
 function Format-Error {
     param ([String]$message, [String]$cause, [String[]]$hints)
-    if ($cause) { $message += "`n| Caused by: " + (Join $cause.Split([Environment]::NewLine) "`n| ")}
-    foreach ($hint in $hints) { $message += "`n| ->> " + (Join $hint.Split([System.Environment]::NewLine) "`n|   ") }
+    if ($cause) { $message += "`n  Caused by: " + (Join $cause.Split([Environment]::NewLine) "`n  ")}
+    foreach ($hint in $hints) { $message += "`n  ->> " + (Join $hint.Split([System.Environment]::NewLine) "`n    ") }
     return $message
 }
 
@@ -87,13 +87,13 @@ function CollapseNested ($nested_obj, [String[]]$keys) {
     if ($keys.Count -gt 0 -and $nested_obj -is [Hashtable]) {
         $result = @()
         foreach ($val in $nested_obj.Keys) {
-            $inner = $nested_obj[$val]
-            $collapsed = if ($inner -is [Hashtable]) { CollapseNested $inner $keys[1..$keys.Count] } else { $inner }
-            try { $result += $collapsed | ForEach-Object { $_[$keys[0]] = $val; $_ } }
+            $collapsed = CollapseNested $nested_obj[$val] $keys[1..$keys.Count]
+            try { $result += $collapsed | ForEach-Object { $_[$keys[0]] = $val; $_["__o"] = ".'$val'$($_["__o"])"; $_ } }
             catch { return $nested_obj }
         }
         return $result
-    } else { $nested_obj }
+    } elseif ($keys.Count -gt 0) { $i = 0; $nested_obj | ForEach-Object { if ($_ -is [Hashtable]) { $_["__o"] = "[$i]" }; $i++; $_ } }
+    else { $nested_obj }
 }
 
 function ExpandCollapsed ($collapsed_obj, [String[]]$keys) {
@@ -109,6 +109,18 @@ function ExpandCollapsed ($collapsed_obj, [String[]]$keys) {
     }
     foreach ($val in $f_map.Keys) { $r_map[$val] = ExpandCollapsed $f_map[$val] $keys[1..$keys.Count] }
     return $r_map
+}
+
+function UrlDecode ([String]$url) {
+    [String[]]$secs = $url.Split("%")
+    [String]$decode = $secs[0]
+    [Byte[]]$bytes = @()
+    foreach ($sec in $secs[1..$secs.Length]) {
+        $bytes += [Byte]"0x$($sec.SubString(0, 2))"
+        $rem = $sec.SubString(2, $sec.Length - 2)
+        if ($rem) { $decode += [System.Text.Encoding]::UTF8.GetString($bytes) + $rem; $bytes = @() }
+    }
+    return $decode + [System.Text.Encoding]::UTF8.GetString($bytes) 
 }
 
 function CustomConvertToJson {
