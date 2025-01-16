@@ -57,9 +57,9 @@ function Get-SecurityGroupsConfig ([Hashtable]$config) {
             param ([Hashtable]$data, [ApiAction]$action)
             ConvertSecurityGroupsData $data $action
         }
-        img_converter = {
-            param ([Hashtable]$data, [ApiAction]$action)
-            ImageFromSecurityGroup $data $action
+        convert_to_image = {
+            param ([DataPacket]$data_packet)
+            ImageFromSecurityGroup $data_packet
         }
     }
 }
@@ -114,6 +114,10 @@ function Get-ServicesConfig ([Hashtable]$config) {
         converter = {
             param ([Hashtable]$data, [ApiAction]$action)
             ConvertServicesData $data $action
+        }
+        convert_to_image = {
+            param ([DataPacket]$data_packet)
+            ImageFromService $data_packet
         }
     }
 }
@@ -229,6 +233,10 @@ function Get-RulesConfig ([Hashtable]$config) {
         converter = {
             param ([Hashtable]$data, [ApiAction]$action)
             ConvertRulesData $data $action
+        }
+        convert_to_image = {
+            param ([DataPacket]$data_packet)
+            ImageFromRule $data_packet
         }
     }
 }
