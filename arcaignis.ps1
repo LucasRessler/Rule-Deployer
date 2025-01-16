@@ -234,11 +234,6 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
     [ApiHandle]$api_handle = [ApiHandle]::New($config); $api_handle.Init() # might throw
     [IOHandle]$io_handle = if ($inline_json) {
         Write-Host "Loading JSON-data..."
-        if ($tenant) {
-            $Host.UI.WriteWarningLine(
-                "Since commandline argument Tenant=$tenant was provided, json data will be altered!`n" + `
-                    "It's recommended to provide tenants only via the inline json!") 
-        }
         [JsonHandle]::New($inline_json, $config.nsx_image_path, $tenant) # might throw
     }
     else {
