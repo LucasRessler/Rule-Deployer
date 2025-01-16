@@ -96,25 +96,17 @@ function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
 }
 
 # Image Converters
-function ImageFromSecurityGroup ([Hashtable]$data, [ApiAction]$action) {
-    [String]$name = "$TEST_PREFIX$($data.name)"
-    if ($action -eq [ApiAction]::Delete) {
-        return @{
-            action = "$action"
-            elementsToDelete = @("$name (IPSET)")
-        }
-    }
+function ImageFromSecurityGroup ([DataPacket]$data_packet) {
+    [Hashtable]$data = ExpandCollapsed $data_packet.data @("name")
+    @{ $data_packet.tenant = @{ security_groups = $data } }
+}
 
-    $body = @{
-            action = "$action"
-            name = $name
-            groupType = "IPSET"
-            ipAddress = Join @($data.ip_addresses | ForEach-Object { Join @($_.address, $_.net) "/" }) ", "
-    }
+function ImageFromService ([DataPacket]$data_packet) {
+    [Hashtable]$data = ExpandCollapsed $data_packet.data @("name")
+    @{ $data_packet.tenant = @{ services = $data } }
+}
 
-    [String]$requests = Join @($data.servicerequest, $data.updaterequests) ", "
-    [String]$description = Join @($requests, $data.hostname, $data.comment) " - "
-    if ($description) { $body["description"] = $description }
-    if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = "$name (IPSET)" }
-    $body
+function ImageFromRule ([DataPacket]$data_packet) {
+    [Hashtable]$data = ExpandCollapsed $data_packet.data @("gateway", "servicerequest", "index")
+    @{ $data_packet.tenant = @{ rules = $data } }
 }
