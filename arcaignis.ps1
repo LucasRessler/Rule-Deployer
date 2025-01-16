@@ -82,10 +82,7 @@ function HandleDataSheet {
     )
 
     [String]$sheet_name = $resource_config.excel_sheet_name
-    function NothingMoreToDo {
-        Write-Host "Filled out creation status for $sheet_name."
-        Write-Host "Nothing more to do!"
-    }
+    function NothingMoreToDo { Write-Host "Nothing more to do!" }
 
     # Get Raw Data
     PrintDivider
@@ -168,6 +165,7 @@ function HandleDataSheet {
         for ($i = 0; $i -lt $num_deployed; $i++) {
             ShowPercentage $i $num_deployed
             [DataPacket]$deployment = $deployed[$i]
+            [DataPacket]$before_deployment = [DataPacket]::New($deployment, $deployment.data.preconverted)
             [DeploymentStatus]$status = $api_handle.WaitForDeployment($deployment.data.id)
 
             if ($status -eq [DeploymentStatus]::Successful) {
@@ -175,10 +173,10 @@ function HandleDataSheet {
                 [String]$message = "Resource at $($deployment.origin_info) was ${$action_verb}d successfully."
                 [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.success, $deployment.row_index)
                 $io_handle.UpdateOutput($resource_config, $val)
-            }
-            else {
-                $to_deploy += [DataPacket]::New($deployment, $deployment.data.preconverted)
-            }
+
+                [Hashtable]$image = & $resource_config.convert_to_image -data_packet $before_deployment
+                $io_handle.UpdateNsxImage($image, $action)
+            } else { $to_deploy += $before_deployment }
         }
 
         $num_to_deploy = $to_deploy.Length
