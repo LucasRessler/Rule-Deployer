@@ -9,7 +9,7 @@ function ParseIntermediate {
     )
 
     [String[]]$errors = @()
-    [DataPacket]$parsed_packet = [DataPacket]::New(@{}, $data_packet.tenant, $data_packet.row_index)
+    [DataPacket]$parsed_packet = [DataPacket]::New($data_packet, @{})
 
     foreach ($key in $format.Keys) {
         $dbg_name = $format[$key]["dbg_name"]
@@ -26,9 +26,12 @@ function ParseIntermediate {
             else { $data_packet.data[$key] }
 
         if (-not $value) {
-            [Bool]$optional_for_delete = -not $format[$key]["required_for_deletion"] 
+            [Bool]$optional_for_delete = -not $format[$key]["required_for_delete"] 
             [Bool]$optional = $format[$key]["is_optional"] -or ($only_deletion -and $optional_for_delete)
-            if (-not $optional) { $errors += "Missing ${dbg_name}" }
+            if (-not $optional) {
+                $info = if ($generator) { "generated from other values" } else { "field '$key'" } 
+                $errors += "Missing $dbg_name ($info)"
+            }
             continue
         }
 
@@ -48,13 +51,15 @@ function ParseIntermediate {
         }
 
         $value = @($value) | ForEach-Object {
-            if (-not [Regex]::IsMatch($_, "^$regex$")) {
-                $errors += Format-Error -Message "Invalid ${dbg_name}: '$_'" -Hints @($regex_info)
+            [String]$sub_value = $_
+            if (-not [Regex]::IsMatch($sub_value, "^$regex$")) {
+                $hints = if ($regex_info) { @($regex_info) }
+                $errors += Format-Error -Message "Invalid ${dbg_name}: '$sub_value'" -Hints $hints
             }
             if ($subparser) {
-                try { & $subparser -value $_ }
+                try { & $subparser -value $sub_value }
                 catch {
-                    $errors += Format-Error -Message "Invalid ${dbg_name}: '$_'" -Cause $_.Exception.Message
+                    $errors += Format-Error -Message "Invalid ${dbg_name}: '$sub_value'" -Cause $_.Exception.Message
                     continue
                 }
             }
@@ -74,7 +79,7 @@ function ParseIntermediate {
     foreach ($k in $format.Keys) { $data_packet.data.Remove($k) }
     foreach ($k in $data_packet.data.Keys) {
         $v = $data_packet.data[$k] 
-        if ($v) { Write-Warning "Value will be ignored: {'$k': '$v'}" }
+        if ($v) { Write-Warning "Unused value at $($data_packet.origin_info): {'$k': '$v'} will be ignored!" }
     }
     return $parsed_packet
 }
