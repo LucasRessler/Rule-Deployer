@@ -14,10 +14,10 @@ function ConvertSecurityGroupsData ([Hashtable]$data, [ApiAction]$action) {
     }
 
     $body = @{
-            action = "$action"
-            name = $name
-            groupType = "IPSET"
-            ipAddress = Join @($data.ip_addresses | ForEach-Object { Join @($_.address, $_.net) "/" }) ", "
+        action = "$action"
+        name = $name
+        groupType = "IPSET"
+        ipAddress = Join @($data.ip_addresses | ForEach-Object { Join @($_.address, $_.net) "/" }) ", "
     }
 
     [String]$requests = Join @($data.servicerequest, $data.updaterequests) ", "
