@@ -1,9 +1,9 @@
 using module ".\utils.psm1"
 using module ".\api_handle.psm1"
 using module ".\io_handle.psm1"
+using module ".\parsing.psm1"
+using module ".\converters.psm1"
 using module ".\resource_configs.ps1"
-using module ".\parsing.ps1"
-using module ".\converters.ps1"
 
 [CmdletBinding()]
 param (
@@ -112,7 +112,7 @@ function HandleDataSheet {
         catch {
             [String]$err_message = $_.Exception.Message
             [String]$short_info = $err_message.Split([System.Environment]::NewLine)[0].Split(":")[0]
-            [String]$message = Format-Error -Message "Parse error in ${sheet_name}" -Cause "$err_message"
+            [String]$message = Format-Error -Message "Parse error at $($data_packet.origin_info)" -Cause "$err_message"
             [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.parse_error, $data_packet.row_index)
             $Host.UI.WriteErrorLine($message)
             $io_handle.UpdateOutput($resource_config, $val)
@@ -134,30 +134,28 @@ function HandleDataSheet {
         $last_action = "$action"
 
         # Deploy requests
-        [Hashtable[]]$deployed = @()
+        [DataPacket[]]$deployed = @()
         Write-Host "Deploying $num_to_deploy ${action}-request$(PluralityIn $num_to_deploy)..."
         for ($i = 0; $i -lt $num_to_deploy; $i++) {
             ShowPercentage $i $num_to_deploy
-            [Hashtable]$data = $to_deploy[$i].data
-            [String]$tenant = $to_deploy[$i].tenant
             [String]$deployment_name = "$action $($resource_config.resource_name) - $(Get-Date -UFormat %s -Millisecond 0) - LR Automation"
 
             try {
-                [Hashtable]$inputs = & $resource_config.converter -data $data -action $action
-                $deployed += @{
-                    id = $api_handle.Deploy($deployment_name, $tenant, $resource_config.catalog_id, $inputs)
-                    row_index = $to_deploy[$i].row_index 
-                    preconverted = $data
-                }
-            } catch {
+                [Hashtable]$inputs = & $resource_config.converter -data $to_deploy[$i].data -action $action
+                $deployed += [DataPacket]::New($to_deploy[$i], @{
+                        id = $api_handle.Deploy($deployment_name, $to_deploy[$i].tenant, $resource_config.catalog_id, $inputs)
+                        preconverted = $to_deploy[$i].data
+                    })
+            }
+            catch {
                 [String]$short_info = "Deployment Failed"
-                [String]$message = "->> Deploy error in ${sheet_name}: $($_.Exception.Message)"
+                [String]$message = "Deploy error at $($to_deploy[$i].origin_info): $($_.Exception.Message)"
                 [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $to_deploy[$i].row_index)
                 $Host.UI.WriteErrorLine($message)
                 $io_handle.UpdateOutput($resource_config, $val)
             }
 
-            # Start-Sleep $resource_config.ddos_sleep_time # Mandatory because of DDoS protection probably
+            Start-Sleep $resource_config.ddos_sleep_time # Mandatory because of DDoS protection probably
         }
         
         [Int]$num_deployed = $deployed.Length
@@ -169,19 +167,17 @@ function HandleDataSheet {
         Write-Host "Waiting for status of $num_deployed deployment$(PluralityIn $num_deployed)..."
         for ($i = 0; $i -lt $num_deployed; $i++) {
             ShowPercentage $i $num_deployed
-            [Hashtable]$deployment = $deployed[$i]
-            [DeploymentStatus]$status = $api_handle.WaitForDeployment($deployment.id)
+            [DataPacket]$deployment = $deployed[$i]
+            [DeploymentStatus]$status = $api_handle.WaitForDeployment($deployment.data.id)
 
             if ($status -eq [DeploymentStatus]::Successful) {
                 [String]$short_info = "$action Successful"
-                [String]$message = "Resource at row $($deployment.row_index) in $sheet_name was ${$action_verb}d successfully."
+                [String]$message = "Resource at $($deployment.origin_info) was ${$action_verb}d successfully."
                 [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.success, $deployment.row_index)
                 $io_handle.UpdateOutput($resource_config, $val)
-            } else {
-                $to_deploy += @{
-                    data = $deployment.preconverted
-                    row_index = $deployment.row_index
-                }
+            }
+            else {
+                $to_deploy += [DataPacket]::New($deployment, $deployment.data.preconverted)
             }
         }
 
@@ -194,10 +190,9 @@ function HandleDataSheet {
     [String]$actions_str = Join @($actions | ForEach-Object { "$_" }) "/"
     [String]$requests_str = "$actions_str-request$(PluralityIn $actions.Length)"
     foreach ($failed in $to_deploy) {
-        $row_index = $failed.row_index
         [String]$short_info = "$actions_str Failed"
-        [String]$message = "->> $requests_str for resource at $row_index in $sheet_name failed"
-        [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $row_index)
+        [String]$message = "->> $requests_str for resource at $($failed.origin_info) failed"
+        [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $failed.row_index)
         $Host.UI.WriteErrorLine($message)
         $io_handle.UpdateOutput($resource_config, $val)
     }
@@ -216,7 +211,7 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
 
     [ApiAction[]]$default_actions = @([ApiAction]::Create, [ApiAction]::Update)
     [ApiAction[]]$actions = switch ($specific_action.ToLower()) {
-        ""       { $default_actions }
+        "" { $default_actions }
         "create" { @([ApiAction]::Create) }
         "update" { @([ApiAction]::Update) }
         "delete" {
@@ -239,9 +234,14 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
     [ApiHandle]$api_handle = [ApiHandle]::New($config); $api_handle.Init() # might throw
     [IOHandle]$io_handle = if ($inline_json) {
         Write-Host "Loading JSON-data..."
-        if ($tenant) { $Host.UI.WriteWarningLine("Since commandline argument Tenant=$tenant was provided, json data will be altered! It's recommended to provide tenants only via inline json!") }
-        [JsonHandle]::New($inline_json, $config.nsx_image_path, $tenant)
-    } else {
+        if ($tenant) {
+            $Host.UI.WriteWarningLine(
+                "Since commandline argument Tenant=$tenant was provided, json data will be altered!`n" + `
+                    "It's recommended to provide tenants only via the inline json!") 
+        }
+        [JsonHandle]::New($inline_json, $config.nsx_image_path, $tenant) # might throw
+    }
+    else {
         Write-Host "Opening Excel-instance..."
         if (-not $tenant) { throw "Please provide a tenant name" }
         [ExcelHandle]$excel_handle = [ExcelHandle]::New($config.nsx_image_path, $tenant)
@@ -271,7 +271,8 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
             try { HandleDataSheet @handle_datasheet_params | Out-Null }
             catch { $Host.UI.WriteErrorLine($_.Exception.Message) }
         }
-    } finally {
+    }
+    finally {
         PrintDivider
         Write-Host "Releasing IO-Handle..."
         $io_handle.Release()
@@ -279,5 +280,5 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
 }
 
 try { Main $ConfigPath $Tenant $InlineJson $Action }
-catch { $Host.UI.WriteErrorLine($_.Exception.Message); exit 666 }
+catch { $Host.UI.WriteErrorLine($_.Exception.Message); exit 1 }
 Write-Host "Done!"
