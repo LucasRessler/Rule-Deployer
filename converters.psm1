@@ -13,7 +13,7 @@ function ConvertSecurityGroupsData ([Hashtable]$data, [ApiAction]$action) {
         }
     }
 
-    $body = @{
+    [Hashtable]$body = @{
         action = "$action"
         name = $name
         groupType = "IPSET"
@@ -28,7 +28,7 @@ function ConvertSecurityGroupsData ([Hashtable]$data, [ApiAction]$action) {
 }
 
 function ConvertServicesData ([Hashtable]$data, [ApiAction]$action) {
-    $name = "$TEST_PREFIX$($data.name)"
+    [String]$name = "$TEST_PREFIX$($data.name)"
     if ($action -eq [ApiAction]::Delete) {
         return @{
             action = "$action"
@@ -36,23 +36,23 @@ function ConvertServicesData ([Hashtable]$data, [ApiAction]$action) {
         }
     }
 
-    $body =  @{
+    [Hashtable]$body =  @{
         action = "$action"
         name = $name
     }
 
-    $used_protocols = @{}
+    [Hashtable]$used_protocols = @{}
     foreach ($portrange in $data.ports) {
-        $protocol = $portrange.protocol.ToUpper()
-        $portstring = $portrange.start
+        [String]$protocol = $portrange.protocol.ToUpper()
+        [String]$portstring = $portrange.start
         if ($portrange.start -ne $portrange.end) { $portstring += "-$($portrange.end)" }
         if ($used_protocols[$protocol]) { $used_protocols[$protocol] += $portstring }
         else { $used_protocols[$protocol] = @($portstring) }
     }
 
-    $i = 1
+    [Int]$i = 1
     foreach ($protocol in $used_protocols.Keys) {
-        $portranges = $used_protocols[$protocol]
+        [String[]]$portranges = $used_protocols[$protocol]
         $body["protocol$i"] = $protocol
         $body["destinationPorts$i"] = $portranges
         # TODO: Are specifically the source ports always empty?
@@ -68,7 +68,7 @@ function ConvertServicesData ([Hashtable]$data, [ApiAction]$action) {
 }
 
 function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
-    $name = "${TEST_PREFIX}$($data.name)"
+    [String]$name = "${TEST_PREFIX}$($data.name)"
     if ($action -eq [ApiAction]::Delete) {
         return @{
             action = "$action"
@@ -77,7 +77,7 @@ function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
         } 
     }
 
-    $body = @{
+    [Hashtable]$body = @{
         action = "$action"
         name = $name
         gateway = $data.gateway
@@ -97,16 +97,65 @@ function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
 
 # Image Converters
 function ImageFromSecurityGroup ([DataPacket]$data_packet) {
-    [Hashtable]$data = ExpandCollapsed $data_packet.data @("name")
-    @{ $data_packet.tenant = @{ security_groups = $data } }
+    $data = $data_packet.data
+    $name = "$TEST_PREFIX$($data.name)"
+    $ip_addresses = @($data.ip_addresses | ForEach-Object {
+        Join @($_.address, $_.net) "/"
+    }); [Array]::Sort($ip_addresses)
+    $image = @{
+        name = $name
+        group_type = "IPSET"
+        ip_addresses = $ip_addresses
+    }
+
+    if ($data.comment) { $image["comment"] = $data.comment }
+    if ($data.hostname) { $image["hostname"] = $data.hostname }
+    if ($data.servicerequest) { $image["servicerequest"] = $data.servicerequest }
+    if ($data.updaterequests.Count) { $image["updaterequests"] = $data.updaterequests }
+    $expanded = ExpandCollapsed $image @("name")
+    @{ $data_packet.tenant = @{ security_groups = $expanded } }
 }
 
 function ImageFromService ([DataPacket]$data_packet) {
-    [Hashtable]$data = ExpandCollapsed $data_packet.data @("name")
-    @{ $data_packet.tenant = @{ services = $data } }
+    $data = $data_packet.data
+    $name = "$TEST_PREFIX$($data.name)"
+    $ports = @($data.ports | ForEach-Object {
+        $port_range = $_.start
+        if ($_.end -ne $_.start) { $port_range += "-$($_.end)"}
+        Join @($_.protocol, $port_range) ":"
+    }); [Array]::Sort($ports)
+    $image =  @{
+        name = $name
+        ports = $ports
+    }
+
+    if ($data.comment) { $image["comment"] = $data.comment }
+    if ($data.servicerequest) { $image["servicerequest"] = $data.servicerequest }
+    if ($data.updaterequests.Count) { $image["updaterequests"] = $data.updaterequests }
+    $expanded = ExpandCollapsed $image @("name")
+    @{ $data_packet.tenant = @{ services = $expanded } }
 }
 
 function ImageFromRule ([DataPacket]$data_packet) {
-    [Hashtable]$data = ExpandCollapsed $data_packet.data @("gateway", "servicerequest", "index")
-    @{ $data_packet.tenant = @{ rules = $data } }
+    $data = $data_packet.data
+    $name = "${TEST_PREFIX}$($data.name)"
+    $image = @{
+        gateway = $data.gateway
+        servicerequest = $data.servicerequest
+        index = $data.index
+        name = $name
+
+        source_type = if ($data.sources.Length) { "Group" } else { "Any" }
+        destination_type = if ($data.destinations.Length) { "Group" } else { "Any" }
+        service_type = if ($data.services.Length) { "Service" } else { "Any" }
+
+        sources = @($data.sources | ForEach-Object { "${TEST_PREFIX}$_" })
+        destinations = @($data.destinations | ForEach-Object { "${TEST_PREFIX}$_" })
+        services = @($data.services | ForEach-Object { "${TEST_PREFIX}$_" })
+    }
+
+    if ($data.comment) { $image["comment"] = $data.comment }
+    if ($data.updaterequests.Count) { $image["updaterequests"] = $data.updaterequests}
+    $expanded = ExpandCollapsed $image @("gateway", "servicerequest", "index")
+    @{ $data_packet.tenant = @{ rules = $expanded } }
 }
