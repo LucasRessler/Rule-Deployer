@@ -8,6 +8,7 @@ enum ApiAction {
 
 class DataPacket {
     [Hashtable]$data
+    [Hashtable]$resource_config
     [String]$tenant
     [String]$origin_info
     [Int]$row_index
@@ -15,21 +16,24 @@ class DataPacket {
     DataPacket ([DataPacket]$source, [Hashtable]$data) {
         $this.data = $data
         $this.tenant = $source.tenant
-        $this.origin_info = $source.origin_info
         $this.row_index = $source.row_index
+        $this.origin_info = $source.origin_info
+        $this.resource_config = $source.resource_config
     }
 
-    DataPacket ([Hashtable]$data, [String]$tenant, [String]$origin_info) {
+    DataPacket ([Hashtable]$data, [Hashtable]$resource_config, [String]$tenant, [String]$origin_info) {
         $this.data = $data
         $this.tenant = $tenant
         $this.origin_info = $origin_info
+        $this.resource_config = $resource_config
     }
     
-    DataPacket ([Hashtable]$data, [String]$tenant, [String]$origin_info, [Int]$row_index) {
+    DataPacket ([Hashtable]$data, [Hashtable]$resource_config, [String]$tenant, [String]$origin_info, [Int]$row_index) {
         $this.data = $data
         $this.tenant = $tenant
         $this.row_index = $row_index
         $this.origin_info = $origin_info
+        $this.resource_config = $resource_config
     }
 }
 
@@ -150,7 +154,7 @@ class ExcelHandle : IOHandle {
             # Only include data if the output-cell is empty
             if (-not $sheet.Cells.Item($row, $output_column).Text) {
                 [String]$origin_info = "row $row in $sheet_name"
-                [DataPacket]$data_packet = [DataPacket]::New(@{}, $this.tenant, $origin_info, $row)
+                [DataPacket]$data_packet = [DataPacket]::New(@{}, $resource_config, $this.tenant, $origin_info, $row)
                 $is_empty = $true
                 for ($col = 1; $col -lt $output_column; $col++) {
                     $key = $resource_config.excel_format[$col - 1]
@@ -260,7 +264,7 @@ class JsonHandle : IOHandle {
             if ($raw) { CollapseNested $raw $resource_config.json_nesting `
             | ForEach-Object { 
                 [String]$origin_info = $origin_info_base + $_["__o"]; $_.Remove("__o")
-                [DataPacket]::New($_, $tenant, $origin_info)
+                [DataPacket]::New($_, $resource_config, $tenant, $origin_info)
             } }
         })
     }
