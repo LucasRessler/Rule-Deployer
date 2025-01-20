@@ -12,82 +12,20 @@ param (
     [String]$Action
 )
 
+. "$PSScriptRoot\get_config.ps1"
 . "$PSScriptRoot\resource_configs.ps1"
 
-$EXCEL_OPEN_ATTEMPTS = 3
+[Int]$EXCEL_OPEN_ATTEMPTS = 3
 
-function Get-Config ([String]$conf_path) {
-    try { $config = Get-Content $conf_path -ErrorAction Stop | ConvertFrom-Json }
-    catch { throw Format-Error -Message "The config could not be loaded" -cause $_.Exception.Message }
-    $faults = Assert-Format $config @{
-        nsx_image_path = @{}
-        api = @{
-            base_url = @{}
-            catalog_ids = @{ security_groups = @{}; services = @{}; rules = @{} }
-            credentials = @{ username = @{}; password = @{} }
-        }
-        excel = @{
-            filepath = @{}
-            sheetnames = @{ security_groups = @{}; services = @{}; rules = @{} }
-        }
-    }
-    if ($faults) {
-        throw Format-Error `
-            -Message "The config didn't match the expected format" `
-            -Hints $faults
-    }
-
-    $base_url = $config.api.base_url
-    $regex_cidr = "([1-9]|[1-2][0-9]|3[0-2])"             # Decimal number from 1-32
-    $regex_u8 = "([0-1]?[0-9]{1,2}|2([0-4][0-9]|5[0-5]))" # Decimal number from 0-255
-    $regex_ip = "($regex_u8\.){3}$regex_u8"               # u8.u8.u8.u8
-    $regex_u16 = "([0-5]?[0-9]{1,4}|6([0-4][0-9]{3}|5([0-4][0-9]{2}|5([0-2][0-9]|3[0-5]))))" # Decimal number from 0-65535
-    $regex_u16_range = "$regex_u16(\s*-\s*$regex_u16)?"                                      # u16 or u16-u16
-
-    @{
-        nsx_image_path = $config.nsx_image_path
-        excel = $config.excel
-        api = @{
-            catalog_ids = $config.api.catalog_ids
-            credentials = $config.api.credentials
-            urls = @{
-                refresh_token = "$base_url/csp/gateway/am/api/login?access_token" 
-                project_id = "$base_url/iaas/api/projects"
-                login = "$base_url/iaas/api/login"
-                items = "$base_url/catalog/api/items"
-                deployments = "$base_url/deployment/api/deployments"
-            }
-        }
-        regex = @{
-            groupname = "[A-Za-z0-9_.-]+"
-            servicerequest = "[A-Za-z]+\d+"
-            ip_addr = $regex_ip
-            ip_cidr = "$regex_ip(/$regex_cidr)?"         # ip or ip/cidr
-            port = "[A-Za-z0-9]+\s*:\s*$regex_u16_range" # word:u16-range - protocols checked in `ParsePort`
-        }
-        color = @{
-            parse_error = 255 # Red
-            dploy_error = 192 # Dark Red
-            success = 4697456 # Light Green
-        }
-    }
-}
-
-function HandleDataSheet {
+function GetAndParseResourceData {
     param (
         [IOHandle]$io_handle,
-        [ApiHandle]$api_handle,
         [Hashtable]$resource_config,
-        [Hashtable]$config,
-        [ApiAction[]]$actions
+        [Hashtable]$config
     )
 
-    [String]$sheet_name = $resource_config.excel_sheet_name
-    function NothingMoreToDo { Write-Host "Nothing more to do!" }
-
     # Get Raw Data
-    PrintDivider
-    Write-Host "Loading data for $sheet_name..."
+    Write-Host "Loading data for $($resource_config.resource_name)s..."
     [DataPacket[]]$raw_data = $io_handle.GetResourceData($resource_config)
     [DataPacket[]]$intermediate_data = @($raw_data | ForEach-Object { $io_handle.ParseToIntermediate($resource_config, $_) })
     [Int]$num_data = $intermediate_data.Count
@@ -117,8 +55,21 @@ function HandleDataSheet {
         }
     }
 
-    [Int]$num_to_deploy = $to_deploy.Length
-    Write-Host "$num_to_deploy/$num_data parsed successfully$(Punctuate $num_to_deploy $num_data)"
+    Write-Host "$($to_deploy.Count)/$num_data parsed successfully$(Punctuate $to_deploy.Count $num_data)"
+    return $to_deploy
+}
+
+function DeployPackets {
+    param (
+        [DataPacket[]]$to_deploy,
+        [ApiAction[]]$actions,
+        [IOHandle]$io_handle,
+        [ApiHandle]$api_handle,
+        [Hashtable]$config
+    )
+
+    function NothingMoreToDo { Write-Host "Nothing more to do!" }
+    [Int]$num_to_deploy = $to_deploy.Count
     if ($num_to_deploy -eq 0) { NothingMoreToDo; return }
 
     [String]$last_action = $null
@@ -127,25 +78,24 @@ function HandleDataSheet {
         if ($last_action) {
             [String]$adverb = if ("$action" -eq $last_action) { "again" } else { "instead" }
             Write-Host "I'll attempt to $action_verb the failed resource$(PluralityIn $num_to_deploy) $adverb."
-        }
-
-        $last_action = "$action"
+        }; $last_action = "$action"
 
         # Deploy requests
         [DataPacket[]]$deployed = @()
         Write-Host "Deploying $num_to_deploy ${action}-request$(PluralityIn $num_to_deploy)..."
         for ($i = 0; $i -lt $num_to_deploy; $i++) {
             ShowPercentage $i $num_to_deploy
+            [DataPacket]$data_packet = $to_deploy[$i]
+            [Hashtable]$resource_config = $data_packet.resource_config
             [String]$deployment_name = "$action $($resource_config.resource_name) - $(Get-Date -UFormat %s -Millisecond 0) - LR Automation"
 
             try {
-                [Hashtable]$inputs = & $resource_config.converter -data $to_deploy[$i].data -action $action
+                [Hashtable]$inputs = & $resource_config.converter -data $data_packet.data -action $action
                 $deployed += [DataPacket]::New($to_deploy[$i], @{
-                        id = $api_handle.Deploy($deployment_name, $to_deploy[$i].tenant, $resource_config.catalog_id, $inputs)
-                        preconverted = $to_deploy[$i].data
-                    })
-            }
-            catch {
+                    id = $api_handle.Deploy($deployment_name, $data_packet.tenant, $resource_config.catalog_id, $inputs)
+                    preconverted = $to_deploy[$i].data
+                })
+            } catch {
                 [String]$short_info = "Deployment Failed"
                 [String]$message = "Deploy error at $($to_deploy[$i].origin_info): $($_.Exception.Message)"
                 [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $to_deploy[$i].row_index)
@@ -167,6 +117,7 @@ function HandleDataSheet {
             ShowPercentage $i $num_deployed
             [DataPacket]$deployment = $deployed[$i]
             [DataPacket]$before_deployment = [DataPacket]::New($deployment, $deployment.data.preconverted)
+            [Hashtable]$resource_config = $deployment.resource_config
             [DeploymentStatus]$status = $api_handle.WaitForDeployment($deployment.data.id)
 
             if ($status -eq [DeploymentStatus]::Successful) {
@@ -202,10 +153,9 @@ function HandleDataSheet {
 function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [String]$specific_action = "") {
     Write-Host "Loading config from $conf_path..."
     [Hashtable]$config = Get-Config $conf_path # might throw
-    [Hashtable[]]$resource_configs = @(
-        (Get-SecurityGroupsConfig $config)
-        (Get-ServicesConfig $config)
-        (Get-RulesConfig $config)
+    [Hashtable[][]]$resource_config_groups = @(
+        @((Get-SecurityGroupsConfig $config), (Get-ServicesConfig $config)),
+        @((Get-RulesConfig $config))
     )
 
     [ApiAction[]]$default_actions = @([ApiAction]::Create, [ApiAction]::Update)
@@ -214,7 +164,7 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
         "create" { @([ApiAction]::Create) }
         "update" { @([ApiAction]::Update) }
         "delete" {
-            [Array]::Reverse($resource_configs)
+            [Array]::Reverse($resource_config_groups)
             @([ApiAction]::Delete)
         }
 
@@ -250,25 +200,34 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
         $excel_handle 
     }
 
-    [String]$actions_str = Join ($actions | ForEach-Object { "$_".ToLower() }) "/"
-    [String]$sheet_names_str = Join ($resource_configs | ForEach-Object { $_.excel_sheet_name }) ", "
-    Write-Host "Request-Plan: $actions_str resources in $sheet_names_str."
-
     try {
-        foreach ($resource_config in $resource_configs) {
-            $handle_datasheet_params = @{
-                actions = $actions + @($actions | ForEach-Object { @($_) * $resource_config.additional_deploy_chances })
-                io_handle = $io_handle
-                api_handle = $api_handle
-                resource_config = $resource_config
-                config = $config
+        foreach ($resource_config_group in $resource_config_groups) {
+            # Get, parse and collect data for each resource group
+            [DataPacket[]]$to_deploy = @()
+            foreach ($resource_config in $resource_config_group) {
+                PrintDivider
+                $get_and_parse_params = @{
+                    io_handle = $io_handle
+                    resource_config = $resource_config
+                    config = $config
+                }
+                try { $to_deploy += GetAndParseResourceData @get_and_parse_params }
+                catch { $Host.UI.WriteErrorLine($_.Exception.Message) }
             }
 
-            try { HandleDataSheet @handle_datasheet_params | Out-Null }
+            # Deploy parsed packets for the whole resource group
+            PrintDivider
+            $deploy_params = @{
+                to_deploy = $to_deploy
+                actions = $actions
+                io_handle = $io_handle
+                api_handle = $api_handle
+                config = $config
+            }
+            try { DeployPackets @deploy_params }
             catch { $Host.UI.WriteErrorLine($_.Exception.Message) }
         }
-    }
-    finally {
+    } finally {
         PrintDivider
         Write-Host "Releasing IO-Handle..."
         $io_handle.Release()
