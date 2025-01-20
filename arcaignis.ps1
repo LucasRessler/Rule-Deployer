@@ -200,6 +200,14 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
         $excel_handle 
     }
 
+    $actions_str = (Join ($actions | ForEach-Object { "$_" }) "/")
+    $resources_str = Join ($resource_config_groups | ForEach-Object {
+        Join ($_ | ForEach-Object { "$($_.resource_name)s" }) " + "
+    }) ", then "
+    Write-Host "Ready!`n"
+    Write-Host "Request-Plan:   $actions_str resources"
+    Write-Host "Resource Order: $resources_str"
+
     try {
         foreach ($resource_config_group in $resource_config_groups) {
             # Get, parse and collect data for each resource group
