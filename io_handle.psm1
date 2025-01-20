@@ -230,6 +230,7 @@ function RulesDataFromExcelData ([DataPacket]$data_paket) {
 }
 
 class JsonHandle : IOHandle {
+    [String[]]$accepted_keys = @("security_groups", "services", "rules")
     [Hashtable]$input_data
 
     JsonHandle ([String]$raw_json, [String]$nsx_image_path, [String]$tenant) : base ($nsx_image_path) {
@@ -237,16 +238,18 @@ class JsonHandle : IOHandle {
         catch { $this.Release(); throw Format-Error -Message "Received incompatible json data!" -Hints @(
             "Ensure that your top-level json structure is an object!"
         ) -Cause $_.Exception.Message }
-        $this.input_data =  if ($tenant) {
-            $accepted_keys = @("security_groups", "services", "rules")
-            foreach ($key in $data.Keys) {
-                if ($key -notin $accepted_keys) {
-                    throw "When using a tenant explicitly, the top-level json-structure should only contain the fields " + `
-                    $accepted_keys | ForEach-Object { "'$_'" } -join ", "
-                }
+        $this.input_data =  if ($tenant) { @{ $tenant = $data } }
+        else { $data }
+    }
+
+    [String[]]UnusedResources () {
+        [String[]]$unused = @()
+        foreach ($tenant in $this.input_data.Keys) {
+            foreach ($key in $this.input_data[$tenant].Keys) {
+                if ($key -notin $this.accepted_keys) { $unused += "resource '$key' for tenant '$tenant'" }
             }
-            @{ $tenant = $data }
-        } else { $data }
+        }
+        return $unused
     }
 
     [DataPacket[]] GetResourceData ([Hashtable]$resource_config) {
