@@ -3,7 +3,6 @@ using module ".\api_handle.psm1"
 using module ".\io_handle.psm1"
 using module ".\parsing.psm1"
 using module ".\converters.psm1"
-using module ".\resource_configs.ps1"
 
 [CmdletBinding()]
 param (
@@ -12,6 +11,8 @@ param (
     [String]$Tenant,
     [String]$Action
 )
+
+. "$PSScriptRoot\resource_configs.ps1"
 
 [Int]$EXCEL_OPEN_ATTEMPTS = 3
 
