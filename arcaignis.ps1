@@ -14,7 +14,7 @@ param (
 
 . "$PSScriptRoot\resource_configs.ps1"
 
-[Int]$EXCEL_OPEN_ATTEMPTS = 3
+$EXCEL_OPEN_ATTEMPTS = 3
 
 function Get-Config ([String]$conf_path) {
     try { $config = Get-Content $conf_path -ErrorAction Stop | ConvertFrom-Json }
@@ -91,7 +91,7 @@ function HandleDataSheet {
     [DataPacket[]]$raw_data = $io_handle.GetResourceData($resource_config)
     [DataPacket[]]$intermediate_data = @($raw_data | ForEach-Object { $io_handle.ParseToIntermediate($resource_config, $_) })
     [Int]$num_data = $intermediate_data.Count
-    if ($num_data -eq 0) { Write-Host "Nothing to do!"; return }
+    if ($num_data -eq 0) { Write-Host "No data found!"; return }
 
     # Parse Data
     [Hashtable]$unique_check_map = @{}
@@ -233,14 +233,16 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
     [ApiHandle]$api_handle = [ApiHandle]::New($config); $api_handle.Init() # might throw
     [IOHandle]$io_handle = if ($inline_json) {
         Write-Host "Loading JSON-data..."
-        [JsonHandle]::New($inline_json, $config.nsx_image_path, $tenant) # might throw
+        [JsonHandle]$json_handle = [JsonHandle]::New($inline_json, $config.nsx_image_path, $tenant) # might throw
+        foreach ($unused_resource in $json_handle.UnusedResources()) { $Host.UI.WriteWarningLine("Unused $unused_resource") }
+        $json_handle
     }
     else {
         Write-Host "Opening Excel-instance..."
         if (-not $tenant) { throw "Please provide a tenant name" }
         [ExcelHandle]$excel_handle = [ExcelHandle]::New($config.nsx_image_path, $tenant)
         [Bool]$opened = $false
-        foreach ($_ in 0..$EXCEL_OPEN_ATTEMPTS) {
+        foreach ($_ in 1..$EXCEL_OPEN_ATTEMPTS) {
             try { $excel_handle.Open($config.excel.filepath); $opened = $true; break }
             catch { $excel_handle.Release(); Write-Host "Failed. Trying again..."; Start-Sleep 1 }
         }
@@ -248,8 +250,8 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
         $excel_handle 
     }
 
-    $actions_str = Join ($actions | ForEach-Object { "$_".ToLower() }) "/"
-    $sheet_names_str = Join ($resource_configs | ForEach-Object { $_.excel_sheet_name }) ", "
+    [String]$actions_str = Join ($actions | ForEach-Object { "$_".ToLower() }) "/"
+    [String]$sheet_names_str = Join ($resource_configs | ForEach-Object { $_.excel_sheet_name }) ", "
     Write-Host "Request-Plan: $actions_str resources in $sheet_names_str."
 
     try {
