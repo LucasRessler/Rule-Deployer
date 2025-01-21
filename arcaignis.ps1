@@ -139,7 +139,7 @@ function DeployAndAwaitPackets {
         if ($num_to_deploy -eq 0) { NothingMoreToDo; return }
     }
 
-    [String]$actions_str = Join @($actions | ForEach-Object { "$_" }) "/"
+    [String]$actions_str = Join @($actions | Select-Object -Unique | ForEach-Object { "$_" }) "/"
     [String]$requests_str = "$actions_str-request$(PluralityIn $actions.Length)"
     foreach ($failed in $to_deploy) {
         [String]$short_info = "$actions_str Failed"
