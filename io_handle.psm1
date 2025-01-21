@@ -62,6 +62,19 @@ class IOHandle {
         $this.nsx_image = $img_json | ConvertFrom-Json | ConvertTo-Hashtable
     }
 
+    [Bool] ExistsInNsxImage ([Hashtable]$expanded_data) {
+        function exists_recursive([Hashtable]$needle, [Hashtable]$haystack) {
+            foreach ($key in $needle.Keys) {
+                if ($null -eq $haystack[$key]) { return $false }
+                if ($needle[$key] -is [Hashtable]) {
+                    if ($haystack[$key] -isnot [Hashtable]) { return $false }
+                    if (-not (exists_recursive $needle[$key] $haystack[$key])) { return $false }
+                }
+            }; return $true
+        }
+        return exists_recursive $expanded_data $this.nsx_image
+    }
+
     [Void] UpdateNsxImage ([Hashtable]$expanded_data, [ApiAction]$action) {
         function is_leaf ([Hashtable]$target) {
             foreach ($key in $target.Keys) {
@@ -81,10 +94,12 @@ class IOHandle {
                 } elseif (-not $delete) {
                     if ($action -eq [ApiAction]::Create) { $target["date_creation"] = $date }
                     else { $target["date_last_update"] = $date }
+                    # TODO: Update updaterequests non-destructively?
                     $target[$key] = $value
                 }
             }
         }
+
         update_recursive $expanded_data $this.nsx_image ($action -eq [ApiAction]::Delete)
     }
     
