@@ -22,7 +22,8 @@ function GetAndParseResourceData {
     param (
         [IOHandle]$io_handle,
         [Hashtable]$resource_config,
-        [Hashtable]$config
+        [Hashtable]$config,
+        [ApiAction[]]$actions
     )
 
     # Get Raw Data
@@ -179,7 +180,7 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
     }
 
     Write-Host "Initialising communication with API..."
-    # very dangerously disabling validating certification
+    # very dangerously disabling validating certification - sadly necessary
     [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
     [ApiHandle]$api_handle = [ApiHandle]::New($config); $api_handle.Init() # might throw
     [IOHandle]$io_handle = if ($inline_json) {
@@ -213,13 +214,16 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
     try {
         foreach ($resource_config_group in $resource_config_groups) {
             # Get, parse and collect data for each resource type in the group
+            [Int]$deploy_chances = 0
             [DataPacket[]]$to_deploy = @()
             foreach ($resource_config in $resource_config_group) {
                 PrintDivider
+                $deploy_chances = [Math]::Max($deploy_chances, $resource_config.additional_deploy_chances)
                 $get_and_parse_params = @{
                     io_handle = $io_handle
                     resource_config = $resource_config
                     config = $config
+                    actions = $actions
                 }
                 try { $to_deploy += GetAndParseResourceData @get_and_parse_params }
                 catch { $Host.UI.WriteErrorLine($_.Exception.Message) }
@@ -227,9 +231,11 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
 
             # Deploy parsed packets for the whole resource group
             PrintDivider
+            $generous_actions = $actions
+            $generous_actions += $actions | ForEach-Object { @($_) * $deploy_chances }
             $deploy_params = @{
                 to_deploy = $to_deploy
-                actions = $actions
+                actions = $generous_actions
                 io_handle = $io_handle
                 api_handle = $api_handle
                 config = $config
