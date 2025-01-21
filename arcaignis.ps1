@@ -3,6 +3,7 @@ using module ".\api_handle.psm1"
 using module ".\io_handle.psm1"
 using module ".\parsing.psm1"
 using module ".\converters.psm1"
+using module ".\diagnose.psm1"
 
 [CmdletBinding()]
 param (
@@ -59,7 +60,7 @@ function GetAndParseResourceData {
     return $to_deploy
 }
 
-function DeployPackets {
+function DeployAndAwaitPackets {
     param (
         [DataPacket[]]$to_deploy,
         [ApiAction[]]$actions,
@@ -141,7 +142,8 @@ function DeployPackets {
     [String]$requests_str = "$actions_str-request$(PluralityIn $actions.Length)"
     foreach ($failed in $to_deploy) {
         [String]$short_info = "$actions_str Failed"
-        [String]$message = "->> $requests_str for resource at $($failed.origin_info) failed"
+        [String]$message = Format-Error -Message "$requests_str for resource at $($failed.origin_info) failed" `
+            -Hints (DiagnoseFailure $io_handle $failed $actions)
         [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $failed.row_index)
         $Host.UI.WriteErrorLine($message)
         $io_handle.UpdateOutput($resource_config, $val)
@@ -167,7 +169,6 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
             [Array]::Reverse($resource_config_groups)
             @([ApiAction]::Delete)
         }
-
         default {
             throw Format-Error -Message "Failed to parse specified action" -Hints @(
                 "'$specific_action' is not a valid request-action"
@@ -200,17 +201,18 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
         $excel_handle 
     }
 
+    # Display Request Plan
     $actions_str = (Join ($actions | ForEach-Object { "$_" }) "/")
     $resources_str = Join ($resource_config_groups | ForEach-Object {
         Join ($_ | ForEach-Object { "$($_.resource_name)s" }) " + "
     }) ", then "
     Write-Host "Ready!`n"
-    Write-Host "Request-Plan:   $actions_str resources"
     Write-Host "Resource Order: $resources_str"
+    Write-Host "Request-Plan:   $actions_str resources"
 
     try {
         foreach ($resource_config_group in $resource_config_groups) {
-            # Get, parse and collect data for each resource group
+            # Get, parse and collect data for each resource type in the group
             [DataPacket[]]$to_deploy = @()
             foreach ($resource_config in $resource_config_group) {
                 PrintDivider
@@ -232,7 +234,7 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
                 api_handle = $api_handle
                 config = $config
             }
-            try { DeployPackets @deploy_params }
+            try { DeployAndAwaitPackets @deploy_params }
             catch { $Host.UI.WriteErrorLine($_.Exception.Message) }
         }
     } finally {
