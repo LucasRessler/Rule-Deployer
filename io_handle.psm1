@@ -13,27 +13,40 @@ class DataPacket {
     [String]$origin_info
     [Int]$row_index
 
+    [String]$deployment_id = $null
+    [Hashtable]$api_conversions = @{}
+    [Hashtable]$img_conversion = $null
+
     DataPacket ([DataPacket]$source, [Hashtable]$data) {
-        $this.data = $data
-        $this.tenant = $source.tenant
-        $this.row_index = $source.row_index
-        $this.origin_info = $source.origin_info
-        $this.resource_config = $source.resource_config
+        $this.Init($data, $source.resource_config, $source.tenant, $source.origin_info, $source.row_index)
     }
 
     DataPacket ([Hashtable]$data, [Hashtable]$resource_config, [String]$tenant, [String]$origin_info) {
-        $this.data = $data
-        $this.tenant = $tenant
-        $this.origin_info = $origin_info
-        $this.resource_config = $resource_config
+        $this.Init($data, $resource_config, $tenant, $origin_info, 0)
     }
-    
+
     DataPacket ([Hashtable]$data, [Hashtable]$resource_config, [String]$tenant, [String]$origin_info, [Int]$row_index) {
+        $this.Init($data, $resource_config, $tenant, $origin_info, $row_index)
+    }
+
+    [Void] Init ([Hashtable]$data, [Hashtable]$resource_config, [String]$tenant, [String]$origin_info, [Int]$row_index) {
         $this.data = $data
         $this.tenant = $tenant
         $this.row_index = $row_index
         $this.origin_info = $origin_info
         $this.resource_config = $resource_config
+    }
+
+    [Hashtable] GetImageConversion() {
+        if (-not $this.img_conversion) {
+            $this.img_conversion = & $this.resource_config.convert_to_image -data_packet $this
+        }; return $this.img_conversion
+    }
+
+    [Hashtable] GetApiConversion([ApiAction]$action) {
+        if (-not $this.api_conversions[$action]) {
+            $this.api_conversions[$action] = & $this.resource_config.converter -data $this.data -action $action
+        }; return $this.api_conversions[$action]
     }
 }
 
