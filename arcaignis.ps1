@@ -92,11 +92,9 @@ function DeployAndAwaitPackets {
             [String]$deployment_name = "$action $($resource_config.resource_name) - $(Get-Date -UFormat %s -Millisecond 0) - LR Automation"
 
             try {
-                [Hashtable]$inputs = & $resource_config.converter -data $data_packet.data -action $action
-                $deployed += [DataPacket]::New($to_deploy[$i], @{
-                    id = $api_handle.Deploy($deployment_name, $data_packet.tenant, $resource_config.catalog_id, $inputs)
-                    preconverted = $to_deploy[$i].data
-                })
+                [Hashtable]$inputs = $data_packet.GetApiConversion($action)
+                $data_packet.deployment_id = $api_handle.Deploy($deployment_name, $data_packet.tenant, $resource_config.catalog_id, $inputs)
+                $deployed += $data_packet
             } catch {
                 [String]$short_info = "Deployment Failed"
                 [String]$message = "Deploy error at $($to_deploy[$i].origin_info): $($_.Exception.Message)"
@@ -118,9 +116,8 @@ function DeployAndAwaitPackets {
         for ($i = 0; $i -lt $num_deployed; $i++) {
             ShowPercentage $i $num_deployed
             [DataPacket]$deployment = $deployed[$i]
-            [DataPacket]$before_deployment = [DataPacket]::New($deployment, $deployment.data.preconverted)
             [Hashtable]$resource_config = $deployment.resource_config
-            [DeploymentStatus]$status = $api_handle.WaitForDeployment($deployment.data.id)
+            [DeploymentStatus]$status = $api_handle.WaitForDeployment($deployment.deployment_id)
 
             if ($status -eq [DeploymentStatus]::Successful) {
                 [String]$short_info = "$action Successful"
@@ -128,9 +125,9 @@ function DeployAndAwaitPackets {
                 [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.success, $deployment.row_index)
                 $io_handle.UpdateOutput($resource_config, $val)
 
-                [Hashtable]$image = & $resource_config.convert_to_image -data_packet $before_deployment
+                [Hashtable]$image = $deployment.GetImageConversion()
                 $io_handle.UpdateNsxImage($image, $action)
-            } else { $to_deploy += $before_deployment }
+            } else { $to_deploy += $deployment }
         }
 
         $num_to_deploy = $to_deploy.Length
