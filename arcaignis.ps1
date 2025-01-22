@@ -28,8 +28,7 @@ function GetAndParseResourceData {
 
     # Get Raw Data
     Write-Host "Loading data for $($resource_config.resource_name)s..."
-    [DataPacket[]]$raw_data = $io_handle.GetResourceData($resource_config)
-    [DataPacket[]]$intermediate_data = @($raw_data | ForEach-Object { $io_handle.ParseToIntermediate($resource_config, $_) })
+    [DataPacket[]]$intermediate_data = $io_handle.GetResourceData($resource_config)
     [Int]$num_data = $intermediate_data.Count
     if ($num_data -eq 0) { Write-Host "No data found!"; return }
 
@@ -43,7 +42,6 @@ function GetAndParseResourceData {
         $parse_intermediate_params = @{
             only_deletion = -not ([ApiAction]::Create -in $actions -or [ApiAction]::Update -in $actions)
             data_packet = $data_packet
-            format = $resource_config.format
             unique_check_map = $unique_check_map
         }
         try { $to_deploy += ParseIntermediate @parse_intermediate_params }
