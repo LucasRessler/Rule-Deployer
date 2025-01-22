@@ -49,7 +49,7 @@ function Get-SecurityGroupsConfig ([Hashtable]$config) {
         excel_sheet_name = $config.excel.sheetnames.security_groups
         catalog_id = $config.api.catalog_ids.security_groups
         ddos_sleep_time = 1.0
-        excel_parser = {
+        prepare_excel = {
             param ([DataPacket]$data_packet)
             SplitServicerequestsInExcelData $data_packet
         }
@@ -107,7 +107,7 @@ function Get-ServicesConfig ([Hashtable]$config) {
         catalog_id = $config.api.catalog_ids.services
         excel_sheet_name = $config.excel.sheetnames.services
         ddos_sleep_time = 1.0
-        excel_parser = {
+        prepare_excel = {
             param ([DataPacket]$data_packet)
             SplitServicerequestsInExcelData $data_packet
         }
@@ -186,8 +186,8 @@ function Get-RulesConfig ([Hashtable]$config) {
             }
             gateway = @{
                 dbg_name = "Gateway"
-                regex_info = "Must be one either 'T0 Internet' or 'T1 Payload'"
-                regex = "T0 Internet|T1 Payload"
+                regex_info = "Must be either 'T0 Internet' or 'T1 Payload'"
+                regex = "(T0 Internet|T1 Payload)"
                 required_for_delete = $true
             }
             index = @{
@@ -226,7 +226,7 @@ function Get-RulesConfig ([Hashtable]$config) {
         catalog_id = $config.api.catalog_ids.rules
         additional_deploy_chances = 1
         ddos_sleep_time = 3.0
-        excel_parser = {
+        prepare_excel = {
             param ([DataPacket]$data_packet)
             RulesDataFromExcelData $data_packet
         }
