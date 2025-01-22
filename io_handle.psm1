@@ -125,7 +125,6 @@ class IOHandle {
     }
 
     [DataPacket[]]GetResourceData ([Hashtable]$resource_config) { throw [System.NotImplementedException] "GetResourceData must be implemented!" }
-    [DataPacket[]]ParseToIntermediate ([Hashtable]$resource_config, [DataPacket]$data_packet) { throw [System.NotImplementedException] "ParseToIntermediate must be implemented!" }
     [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) { throw [System.NotImplementedException] "UpdateOutput must be implemented!" }
     [Void] Release () { $this.SaveNsxImage() }
 }
@@ -195,11 +194,7 @@ class ExcelHandle : IOHandle {
             }
         }
 
-        return $data_packets
-    }
-
-    [DataPacket[]]ParseToIntermediate ([Hashtable]$resource_config, [DataPacket]$data_packet) {
-        return & $resource_config.excel_parser -data_packet $data_packet
+        return $data_packets | ForEach-Object { & $resource_config.prepare_excel -data_packet $_ }
     }
 
     [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {
@@ -295,10 +290,6 @@ class JsonHandle : IOHandle {
                 [DataPacket]::New($_, $resource_config, $tenant, $origin_info)
             } }
         })
-    }
-
-    [DataPacket[]]ParseToIntermediate ([Hashtable]$resource_config, [DataPacket]$data_packet) {
-        return $data_packet
     }
 
     [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {
