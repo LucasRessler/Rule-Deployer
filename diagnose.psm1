@@ -22,7 +22,7 @@ function DiagnoseFailure {
     [String]$resource_fieldname = $failed_packet.resource_config.field_name
 
     [Hashtable]$dependency_store = @{}
-    [Hashtable]$needle = & $failed_packet.resource_config.convert_to_image $failed_packet
+    [Hashtable]$needle = $failed_packet.GetImageConversion()
     scrape_recursive $needle $dependency_store @("services", "sources", "destinations")
     $tracked = $io_handle.ExistsInNsxImage($needle)
 
