@@ -2,13 +2,13 @@ using module ".\io_handle.psm1"
 
 function ParseIntermediate {
     param(
-        [Hashtable]$format,
         [DataPacket]$data_packet,
         [Hashtable]$unique_check_map,
         [Bool]$only_deletion
     )
 
     [String[]]$errors = @()
+    [Hashtable]$format = $data_packet.resource_config.format
     [DataPacket]$parsed_packet = [DataPacket]::New($data_packet, @{})
 
     foreach ($key in $format.Keys) {
