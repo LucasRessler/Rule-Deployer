@@ -1,8 +1,10 @@
-using module ".\io_handle.psm1"
+using module ".\shared_types.psm1"
+using module ".\parsing.psm1"
 using module ".\utils.psm1"
 
 function Get-SecurityGroupsConfig ([Hashtable]$config) {
     @{
+        id = [ResourceId]::SecurityGroup
         format = @{
             name = @{
                 dbg_name = "Security Group Name"
@@ -49,23 +51,12 @@ function Get-SecurityGroupsConfig ([Hashtable]$config) {
         excel_sheet_name = $config.excel.sheetnames.security_groups
         catalog_id = $config.api.catalog_ids.security_groups
         ddos_sleep_time = 1.0
-        prepare_excel = {
-            param ([DataPacket]$data_packet)
-            SplitServicerequestsInExcelData $data_packet
-        }
-        converter = {
-            param ([Hashtable]$data, [ApiAction]$action)
-            ConvertSecurityGroupsData $data $action
-        }
-        convert_to_image = {
-            param ([DataPacket]$data_packet)
-            ImageFromSecurityGroup $data_packet
-        }
     }
 }
 
 function Get-ServicesConfig ([Hashtable]$config) {
     @{
+        id = [ResourceId]::Service
         format = @{
             name = @{
                 dbg_name = "Service Name"
@@ -107,23 +98,12 @@ function Get-ServicesConfig ([Hashtable]$config) {
         catalog_id = $config.api.catalog_ids.services
         excel_sheet_name = $config.excel.sheetnames.services
         ddos_sleep_time = 1.0
-        prepare_excel = {
-            param ([DataPacket]$data_packet)
-            SplitServicerequestsInExcelData $data_packet
-        }
-        converter = {
-            param ([Hashtable]$data, [ApiAction]$action)
-            ConvertServicesData $data $action
-        }
-        convert_to_image = {
-            param ([DataPacket]$data_packet)
-            ImageFromService $data_packet
-        }
     }
 }
 
 function Get-RulesConfig ([Hashtable]$config) {
     @{
+        id = [ResourceId]::Rule
         format = @{
             unique_key = @{
                 dbg_name = "Resource Identifier"
@@ -224,19 +204,7 @@ function Get-RulesConfig ([Hashtable]$config) {
         field_name = "rules"
         excel_sheet_name = $config.excel.sheetnames.rules
         catalog_id = $config.api.catalog_ids.rules
-        additional_deploy_chances = 1
+        additional_deploy_chances = 1  # Rules run into API collisions shockingly often
         ddos_sleep_time = 3.0
-        prepare_excel = {
-            param ([DataPacket]$data_packet)
-            RulesDataFromExcelData $data_packet
-        }
-        converter = {
-            param ([Hashtable]$data, [ApiAction]$action)
-            ConvertRulesData $data $action
-        }
-        convert_to_image = {
-            param ([DataPacket]$data_packet)
-            ImageFromRule $data_packet
-        }
     }
 }
