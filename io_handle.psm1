@@ -48,15 +48,16 @@ class IOHandle {
             return $true
         }
 
-        function update_recursive([Hashtable]$source, [Hashtable]$target, [Bool]$delete) {
+        [Bool]$deleting = ($action -eq [ApiAction]::Delete)
+        function update_recursive([Hashtable]$source, [Hashtable]$target) {
             [String]$date = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
             foreach ($key in $source.Keys) {
                 $value = $source[$key]
                 if ($value -is [Hashtable]) {
                     if (-not $target[$key] ) { $target[$key] = @{} }
-                    update_recursive $value $target[$key] $delete
-                    if ($delete -and (is_leaf $target[$key])) { $target.Remove($key) }
-                } elseif (-not $delete) {
+                    update_recursive $value $target[$key]
+                    if ($deleting -and (is_leaf $target[$key])) { $target.Remove($key) }
+                } elseif (-not $deleting) {
                     if ($action -eq [ApiAction]::Create) { $target["date_creation"] = $date }
                     if ($action -eq [ApiAction]::Update) { $target["date_last_update"] = $date }
                     [Bool]$changed_sr = $key -eq "servicerequest" -and $target[$key] -and $target[$key] -ne $value
@@ -68,7 +69,7 @@ class IOHandle {
             }
         }
 
-        update_recursive $expanded_data $this.nsx_image ($action -eq [ApiAction]::Delete)
+        update_recursive $expanded_data $this.nsx_image
     }
     
     [Void] SaveNsxImage () {
