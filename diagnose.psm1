@@ -1,3 +1,4 @@
+using module ".\shared_types.psm1"
 using module ".\io_handle.psm1"
 
 function DiagnoseFailure {
@@ -19,7 +20,7 @@ function DiagnoseFailure {
     [Bool]$tried_update = [ApiAction]::Update -in $failed_actions
     [Bool]$tried_delete = [ApiAction]::Delete -in $failed_actions
     [String]$tenant = $failed_packet.tenant
-    [String]$resource_fieldname = $failed_packet.resource_config.field_name
+    [ResourceId]$resource_id = $failed_packet.resource_config.id
 
     [Hashtable]$dependency_store = @{}
     [Hashtable]$needle = $failed_packet.GetImageConversion()
@@ -28,7 +29,7 @@ function DiagnoseFailure {
 
     # Check dependencies
     [String[]]$depends_not_found = @()
-    if ($resource_fieldname -eq "rules") {
+    if ($resource_id -eq [ResourceId]::Rule) {
         foreach ($used_service in $dependency_store["services"]) {
             $service_needle = @{ $tenant = @{ services = @{ $used_service = @{} } } }
             if (-not ($io_handle.ExistsInNsxImage($service_needle))) { $depends_not_found += $used_service }
@@ -45,8 +46,8 @@ function DiagnoseFailure {
 
     # Check reverse dependencies
     [String[]]$dependees_found = @()
-    if ($resource_fieldname -ne "rules") {
-        [String]$name = $needle[$tenant][$resource_fieldname].Keys[0]
+    if ($resource_id -ne [ResourceId]::Rule) {
+        [String]$name = $needle[$tenant][$failed_packet.resource_config.field_name].Keys[0]
         [Hashtable]$rules_for_this_tenant = $io_handle.nsx_image[$tenant]["rules"]
         foreach ($gateway in $rules_for_this_tenant.Keys) {
             [Hashtable]$service_requests = $rules_for_this_tenant[$gateway]
