@@ -1,54 +1,6 @@
+using module ".\shared_types.psm1"
+using module ".\converters.psm1"
 using module ".\utils.psm1"
-
-enum ApiAction {
-    Create
-    Update
-    Delete
-}
-
-class DataPacket {
-    [Hashtable]$data
-    [Hashtable]$resource_config
-    [String]$tenant
-    [String]$origin_info
-    [Int]$row_index
-
-    [String]$deployment_id = $null
-    [Hashtable]$api_conversions = @{}
-    [Hashtable]$img_conversion = $null
-
-    DataPacket ([DataPacket]$source, [Hashtable]$data) {
-        $this.Init($data, $source.resource_config, $source.tenant, $source.origin_info, $source.row_index)
-    }
-
-    DataPacket ([Hashtable]$data, [Hashtable]$resource_config, [String]$tenant, [String]$origin_info) {
-        $this.Init($data, $resource_config, $tenant, $origin_info, 0)
-    }
-
-    DataPacket ([Hashtable]$data, [Hashtable]$resource_config, [String]$tenant, [String]$origin_info, [Int]$row_index) {
-        $this.Init($data, $resource_config, $tenant, $origin_info, $row_index)
-    }
-
-    [Void] Init ([Hashtable]$data, [Hashtable]$resource_config, [String]$tenant, [String]$origin_info, [Int]$row_index) {
-        $this.data = $data
-        $this.tenant = $tenant
-        $this.row_index = $row_index
-        $this.origin_info = $origin_info
-        $this.resource_config = $resource_config
-    }
-
-    [Hashtable] GetImageConversion() {
-        if (-not $this.img_conversion) {
-            $this.img_conversion = & $this.resource_config.convert_to_image -data_packet $this
-        }; return $this.img_conversion
-    }
-
-    [Hashtable] GetApiConversion([ApiAction]$action) {
-        if (-not $this.api_conversions[$action]) {
-            $this.api_conversions[$action] = & $this.resource_config.converter -data $this.data -action $action
-        }; return $this.api_conversions[$action]
-    }
-}
 
 class OutputValue {
     [String]$message
@@ -107,7 +59,7 @@ class IOHandle {
                 } elseif (-not $delete) {
                     if ($action -eq [ApiAction]::Create) { $target["date_creation"] = $date }
                     else { $target["date_last_update"] = $date }
-                    # TODO: Update updaterequests non-destructively?
+                    # TODO: Update updaterequests non-destructively
                     $target[$key] = $value
                 }
             }
@@ -194,7 +146,7 @@ class ExcelHandle : IOHandle {
             }
         }
 
-        return $data_packets | ForEach-Object { & $resource_config.prepare_excel -data_packet $_ }
+        return $data_packets | ForEach-Object { PrepareExcelData -data_packet $_ }
     }
 
     [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {
@@ -232,30 +184,6 @@ class ExcelHandle : IOHandle {
     }
 }
 
-function SplitServicerequestsInExcelData ([DataPacket]$data_packet) {
-    [String[]]$req = $data_packet.data.all_servicerequests
-    if ($req.Count -gt 0) { $data_packet.data["servicerequest"] = $req[0] }
-    if ($req.Count -gt 1) { $data_packet.data["updaterequests"] = $req[1..$req.Count] }
-    $data_packet.data.Remove("all_servicerequests")
-    return $data_packet
-}
-
-function RulesDataFromExcelData ([DataPacket]$data_paket) {
-    [String[]]$gateways = @()
-    [DataPacket[]]$data_packets = @()
-    if ($data_packet.data["t0_internet"]) { $gateways += "T0 Internet" }
-    if ($data_packet.data["t1_payload"] -or $gateways.Count -eq 0) { $gateways += "T1 Payload" }
-    $data_packet.data.Remove("t0_internet")
-    $data_packet.data.Remove("t1_payload")
-    $data_packet = SplitServicerequestsInExcelData $data_packet
-    foreach ($gateway in $gateways) {
-        [DataPacket]$new_packet = [DataPacket]::New($data_packet, (DeepCopy $data_packet.data))
-        $new_packet.data["gateway"] = $gateway
-        $data_packets += $new_packet
-    }
-    return $data_packets
-}
-
 class JsonHandle : IOHandle {
     [String[]]$accepted_keys = @("security_groups", "services", "rules")
     [Hashtable]$input_data
@@ -289,7 +217,7 @@ class JsonHandle : IOHandle {
                 [String]$origin_info = $origin_info_base + $_["__o"]; $_.Remove("__o")
                 [DataPacket]::New($_, $resource_config, $tenant, $origin_info)
             } }
-        })
+        } | ForEach-Object { PrepareJsonData -data_packet $_ })
     }
 
     [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {
