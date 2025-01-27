@@ -58,9 +58,12 @@ class IOHandle {
                     if ($delete -and (is_leaf $target[$key])) { $target.Remove($key) }
                 } elseif (-not $delete) {
                     if ($action -eq [ApiAction]::Create) { $target["date_creation"] = $date }
-                    else { $target["date_last_update"] = $date }
-                    # TODO: Update updaterequests non-destructively
-                    $target[$key] = $value
+                    if ($action -eq [ApiAction]::Update) { $target["date_last_update"] = $date }
+                    [Bool]$changed_sr = $key -eq "servicerequest" -and $target[$key] -and $target[$key] -ne $value
+                    if ($changed_sr -or $key -eq "updaterequests") {
+                        $target["updaterequests"] = @($target["updaterequests"]; $value) | Select-Object -Unique
+                        [Array]::Sort($target["updaterequests"])
+                    } else { $target[$key] = $value }
                 }
             }
         }
