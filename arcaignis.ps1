@@ -1,9 +1,10 @@
-using module ".\utils.psm1"
+using module ".\shared_types.psm1"
 using module ".\api_handle.psm1"
-using module ".\io_handle.psm1"
-using module ".\parsing.psm1"
 using module ".\converters.psm1"
+using module ".\io_handle.psm1"
 using module ".\diagnose.psm1"
+using module ".\parsing.psm1"
+using module ".\utils.psm1"
 
 [CmdletBinding()]
 param (
@@ -68,7 +69,7 @@ function DeployAndAwaitPackets {
         [Hashtable]$config
     )
 
-    function NothingMoreToDo { Write-Host "Nothing more to do!" }
+    function NothingMoreToDo { Write-Host "Nothing more to do." }
     [Int]$num_to_deploy = $to_deploy.Count
     if ($num_to_deploy -eq 0) { NothingMoreToDo; return }
 
@@ -136,11 +137,11 @@ function DeployAndAwaitPackets {
 
     [String]$actions_str = Join @($actions | Select-Object -Unique | ForEach-Object { "$_" }) "/"
     [String]$requests_str = "$actions_str-request$(PluralityIn $actions.Length)"
-    foreach ($failed in $to_deploy) {
+    foreach ($failed_packet in $to_deploy) {
         [String]$short_info = "$actions_str Failed"
-        [String]$message = Format-Error -Message "$requests_str for resource at $($failed.origin_info) failed" `
-            -Hints (DiagnoseFailure $io_handle $failed $actions)
-        [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $failed.row_index)
+        [String]$message = Format-Error -Message "$requests_str for resource at $($failed_packet.origin_info) failed" `
+            -Hints (DiagnoseFailure $io_handle $failed_packet $actions)
+        [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $failed_packet.row_index)
         $Host.UI.WriteErrorLine($message)
         $io_handle.UpdateOutput($resource_config, $val)
     }
