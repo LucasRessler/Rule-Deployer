@@ -1,6 +1,5 @@
 using module ".\shared_types.psm1"
 using module ".\api_handle.psm1"
-using module ".\converters.psm1"
 using module ".\io_handle.psm1"
 using module ".\diagnose.psm1"
 using module ".\parsing.psm1"
@@ -8,7 +7,7 @@ using module ".\utils.psm1"
 
 [CmdletBinding()]
 param (
-    [String]$ConfigPath = "$PSScriptRoot\arcaignis.json",
+    [String]$ConfigPath = "$PSScriptRoot\config.json",
     [String]$InlineJson,
     [String]$Tenant,
     [String]$Action
@@ -88,10 +87,12 @@ function DeployAndAwaitPackets {
             ShowPercentage $i $num_to_deploy
             [DataPacket]$data_packet = $to_deploy[$i]
             [Hashtable]$resource_config = $data_packet.resource_config
-            [String]$deployment_name = "$action $($resource_config.resource_name) - $(Get-Date -UFormat %s -Millisecond 0) - LR Automation"
+            [Hashtable]$inputs = $data_packet.GetApiConversion($action)
+            [String]$name = $data_packet.GetApiConversion([ApiAction]::Create).name
+            [String]$date = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+            [String]$deployment_name = "$action $(Join @($resource_config.resource_name, $name) " ") - $date - LR Automation"
 
             try {
-                [Hashtable]$inputs = $data_packet.GetApiConversion($action)
                 $data_packet.deployment_id = $api_handle.Deploy($deployment_name, $data_packet.tenant, $resource_config.catalog_id, $inputs)
                 $deployed += $data_packet
             } catch {
@@ -157,20 +158,25 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
         @((Get-RulesConfig $config))
     )
 
-    [ApiAction[]]$default_actions = @([ApiAction]::Create, [ApiAction]::Update)
     [ApiAction[]]$actions = switch ($specific_action.ToLower()) {
-        "" { $default_actions }
+        "create/update" { @([ApiAction]::Create, [ApiAction]::Update) }
         "create" { @([ApiAction]::Create) }
         "update" { @([ApiAction]::Update) }
         "delete" {
             [Array]::Reverse($resource_config_groups)
             @([ApiAction]::Delete)
         }
+        "" {
+            throw Format-Error -Message "Please provide an Action to perform" -Hints @(
+                "Valid options are 'create', 'update' and 'delete'"
+                "Use 'create/update' to attempt both create and update requests"
+            )
+        }
         default {
             throw Format-Error -Message "Failed to parse specified action" -Hints @(
                 "'$specific_action' is not a valid request-action"
                 "Please use 'create', 'update' or 'delete'"
-                "Leave blank to attempt both create and update requests"
+                "Use 'create/update' to attempt both create and update requests"
             )
         }
     }
@@ -209,7 +215,7 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
 
     try {
         foreach ($resource_config_group in $resource_config_groups) {
-            # Get, parse and collect data for each resource type in the group
+            # Get, parse, collect data for each resource type in the group
             [Int]$deploy_chances = 0
             [DataPacket[]]$to_deploy = @()
             foreach ($resource_config in $resource_config_group) {
