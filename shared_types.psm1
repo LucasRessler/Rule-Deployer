@@ -41,6 +41,19 @@ class DataPacket {
         $this.resource_config = $resource_config
     }
 
+    [Void] ClearCache () {
+        $this.api_conversions = @{}
+        $this.img_conversion = $null
+    }
+
+    [String[]] GetImageKeys() {
+        return @(
+            $this.tenant
+            $this.resource_config.field_name
+            $this.resource_config.json_nesting | ForEach-Object { $this.data[$_] }
+        )
+    }
+
     [Hashtable] GetImageConversion() {
         if (-not $this.img_conversion) {
             $this.img_conversion = ConvertToImage $this
