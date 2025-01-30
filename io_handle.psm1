@@ -27,17 +27,14 @@ class IOHandle {
         $this.nsx_image = $img_json | ConvertFrom-Json | ConvertTo-Hashtable
     }
 
-    [Bool] ExistsInNsxImage ([Hashtable]$expanded_data) {
-        function exists_recursive([Hashtable]$needle, [Hashtable]$haystack) {
-            foreach ($key in $needle.Keys) {
-                if ($null -eq $haystack[$key]) { return $false }
-                if ($needle[$key] -is [Hashtable]) {
-                    if ($haystack[$key] -isnot [Hashtable]) { return $false }
-                    if (-not (exists_recursive $needle[$key] $haystack[$key])) { return $false }
-                }
-            }; return $true
+    [Hashtable] GetImage ([String[]]$image_keys) {
+        function get_recursive([String[]]$keys, [Hashtable]$haystack) {
+            if ($keys.Count -eq 0) { return $haystack }
+            $sub = $haystack[$keys[0]]
+            if ($null -eq $sub -or $sub -isnot [Hashtable]) { return $null }
+            return get_recursive $keys[1..$keys.Count] $sub
         }
-        return exists_recursive $expanded_data $this.nsx_image
+        return get_recursive $image_keys $this.nsx_image
     }
 
     [Void] UpdateNsxImage ([Hashtable]$expanded_data, [ApiAction]$action) {
@@ -48,24 +45,19 @@ class IOHandle {
             return $true
         }
 
-        [Bool]$deleting = ($action -eq [ApiAction]::Delete)
+        [String]$date = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         function update_recursive([Hashtable]$source, [Hashtable]$target) {
-            [String]$date = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
             foreach ($key in $source.Keys) {
                 $value = $source[$key]
-                if ($value -is [Hashtable]) {
-                    if (-not $target[$key] ) { $target[$key] = @{} }
-                    update_recursive $value $target[$key]
-                    if ($deleting -and (is_leaf $target[$key])) { $target.Remove($key) }
-                } elseif (-not $deleting) {
-                    if ($action -eq [ApiAction]::Create) { $target["date_creation"] = $date }
-                    if ($action -eq [ApiAction]::Update) { $target["date_last_update"] = $date }
-                    [Bool]$changed_sr = $key -eq "servicerequest" -and $target[$key] -and $target[$key] -ne $value
-                    if ($changed_sr -or $key -eq "updaterequests") {
-                        $target["updaterequests"] = @($target["updaterequests"]; $value) | Select-Object -Unique
-                        [Array]::Sort($target["updaterequests"])
-                    } else { $target[$key] = $value }
-                }
+                if ($value -isnot [Hashtable]) { continue }
+                if (-not $target[$key] ) { $target[$key] = @{} }
+                update_recursive $value $target[$key]
+                if (-not (is_leaf $target[$key])) { continue }
+                if ($action -ne [ApiAction]::Delete) { 
+                    $target[$key] = $value
+                    if ($action -eq [ApiAction]::Create) { $target[$key]["date_creation"] = $date }
+                    if ($action -eq [ApiAction]::Update) { $target[$key]["date_last_update"] = $date }
+                } else { $target.Remove($key) }
             }
         }
 
