@@ -87,6 +87,22 @@ function DeployAndAwaitPackets {
             ShowPercentage $i $num_to_deploy
             [DataPacket]$data_packet = $to_deploy[$i]
             [Hashtable]$resource_config = $data_packet.resource_config
+            [Hashtable]$data = $data_packet.data
+
+            # Align with Image
+            # I'll have to save the old version of the packet if I ever implement smart action order
+            if ($action -eq [ApiAction]::Update -and ($img = $io_handle.GetImage($data_packet.GetImageKeys()))) {
+                [String]$k_sr = "servicerequest"; [String]$k_ur = "updaterequests"
+                [String]$sr_cur = $data[$k_sr]; [String]$sr_img = $img[$k_sr]
+                [Bool]$sr_changed = $null -ne $sr_img -and $sr_img -ne $sr_cur
+                [String[]]$ur_cur = $data[$k_ur]; [String[]]$ur_img = $img[$k_ur]
+                [String[]]$ur_new = $ur_cur + $ur_img
+                if ($sr_changed) { $ur_new += $sr_cur; $data[$k_sr] = $sr_img }
+                $data[$k_ur] = NormalizeArray $ur_new
+                $data["date_creation"] = $img["date_creation"]
+                $data_packet.ClearCache()
+            }
+
             [Hashtable]$inputs = $data_packet.GetApiConversion($action)
             [String]$name = $data_packet.GetApiConversion([ApiAction]::Create).name
             [String]$date = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -98,7 +114,7 @@ function DeployAndAwaitPackets {
             } catch {
                 [String]$short_info = "Deployment Failed"
                 [String]$message = "Deploy error at $($to_deploy[$i].origin_info): $($_.Exception.Message)"
-                [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $to_deploy[$i].row_index)
+                [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $data_packet.row_index)
                 $Host.UI.WriteErrorLine($message)
                 $io_handle.UpdateOutput($resource_config, $val)
             }
@@ -167,7 +183,7 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
             @([ApiAction]::Delete)
         }
         "" {
-            throw Format-Error -Message "Please provide an Action to perform" -Hints @(
+            throw Format-Error -Message "Please provide a request action" -Hints @(
                 "Valid options are 'create', 'update' and 'delete'"
                 "Use 'create/update' to attempt both create and update requests"
             )
@@ -205,13 +221,13 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
     }
 
     # Display Request Plan
-    $actions_str = (Join ($actions | ForEach-Object { "$_" }) "/")
-    $resources_str = Join ($resource_config_groups | ForEach-Object {
+    $actions_info = (Join ($actions | ForEach-Object { "$_" }) "/")
+    $resources_info = Join ($resource_config_groups | ForEach-Object {
         Join ($_ | ForEach-Object { "$($_.resource_name)s" }) " + "
     }) ", then "
     Write-Host "Ready!`n"
-    Write-Host "Resource Order: $resources_str"
-    Write-Host "Request-Plan:   $actions_str resources"
+    Write-Host "Resource Order: $resources_info"
+    Write-Host "Request-Plan:   $actions_info resources"
 
     try {
         foreach ($resource_config_group in $resource_config_groups) {
