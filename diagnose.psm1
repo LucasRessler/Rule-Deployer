@@ -7,6 +7,7 @@ function DiagnoseFailure {
         [DataPacket]$failed_packet,
         [ApiAction[]]$failed_actions
     )
+
     function scrape_recursive([Hashtable]$nested, [Hashtable]$store, [String[]]$store_keys) {
         [String[]]$keys = $nested.Keys
         foreach ($key in $keys) {
@@ -21,33 +22,29 @@ function DiagnoseFailure {
     [Bool]$tried_delete = [ApiAction]::Delete -in $failed_actions
     [String]$tenant = $failed_packet.tenant
     [ResourceId]$resource_id = $failed_packet.resource_config.id
-
-    [Hashtable]$dependency_store = @{}
-    [Hashtable]$needle = $failed_packet.GetImageConversion()
-    scrape_recursive $needle $dependency_store @("services", "sources", "destinations")
-    $tracked = $io_handle.ExistsInNsxImage($needle)
+    [Bool]$tracked = $null -ne $io_handle.GetImage($failed_packet.GetImageKeys())
 
     # Check dependencies
     [String[]]$depends_not_found = @()
     if ($resource_id -eq [ResourceId]::Rule) {
-        foreach ($used_service in $dependency_store["services"]) {
-            $service_needle = @{ $tenant = @{ services = @{ $used_service = @{} } } }
-            if (-not ($io_handle.ExistsInNsxImage($service_needle))) { $depends_not_found += $used_service }
+        foreach ($used_service in $failed_packet.data["services"]) {
+            [String[]]$service_keys = @($tenant, "services", $used_service)
+            if ($null -eq $io_handle.GetImage($service_keys)) { $depends_not_found += $used_service }
         }
-        foreach ($used_source in $dependency_store["sources"]) {
-            $source_needle = @{ $tenant = @{ security_groups = @{ $used_source = @{} } } }
-            if (-not ($io_handle.ExistsInNsxImage($source_needle))) { $depends_not_found += $used_source }
+        foreach ($used_source in $failed_packet.data["sources"]) {
+            [String[]]$source_keys = @($tenant, "security_groups", $used_source)
+            if ($null -eq $io_handle.GetImage($source_keys)) { $depends_not_found += $used_source }
         }
-        foreach ($used_destination in $dependency_store["destinations"]) {
-            $destination_needle = @{ $tenant = @{ security_groups = @{ $used_destination = @{} } } }
-            if (-not ($io_handle.ExistsInNsxImage($destination_needle))) { $depends_not_found += $used_destination }
+        foreach ($used_destination in $failed_packet.data["destinations"]) {
+            [String[]]$desitnation_keys = @($tenant, "security_groups", $used_destination)
+            if ($null -eq $io_handle.GetImage($desitnation_keys)) { $depends_not_found += $used_destination }
         }
     }
 
     # Check reverse dependencies
     [String[]]$dependees_found = @()
     if ($resource_id -ne [ResourceId]::Rule) {
-        [String]$name = $needle[$tenant][$failed_packet.resource_config.field_name].Keys[0]
+        [String]$name = $failed_packet.data["name"]
         [Hashtable]$rules_for_this_tenant = $io_handle.nsx_image[$tenant]["rules"]
         foreach ($gateway in $rules_for_this_tenant.Keys) {
             [Hashtable]$service_requests = $rules_for_this_tenant[$gateway]
@@ -73,7 +70,7 @@ function DiagnoseFailure {
             return @( # Can only happen for FW Rules
                 "Make sure that all security groups and services used in the rule exist"
                 "It's likely that one or more of the following resources don't exist:"
-                @($depends_not_found)
+                @($depends_not_found | ForEach-Object { "- $_" })
                 "Note: I can only make statements for resources that were modified with this tool"
             ) } else {
             return @(
@@ -91,7 +88,7 @@ function DiagnoseFailure {
             return @( # Can only happen for FW Rules
                 "Make sure that all security groups and services used in the rule exist"
                 "It's likely that one or more of the following resources don't exist:"
-                @($depends_not_found)
+                @($depends_not_found | ForEach-Object { "- $_" })
                 "Note: I can only make statements for resources that were modified with this tool"
             ) } else {
             return @(
@@ -107,7 +104,7 @@ function DiagnoseFailure {
             return @( # Can only happen for FW Rules
                 "Make sure that all security groups and services used in the rule exist"
                 "It's likely that one or more of the following resources don't exist:"
-                @($depends_not_found)
+                @($depends_not_found | ForEach-Object { "- $_" })
                 "Note: I can only make statements for resources that were modified with this tool"
             ) } elseif ($tracked) {
             return @(
@@ -122,10 +119,10 @@ function DiagnoseFailure {
         }
         ($tried_delete) {
             if ($dependees_found.Count) {
-            return @(
+            return @( # Can only happen for Security Groups and Services
                 "Make sure that no rules still use this resource"
                 "It's likely that one or more of the following rules still use it:"
-                @($dependees_found)
+                @($dependees_found | ForEach-Object { "- $_" })
                 "Note: I can only make statements for resources that were modified with this tool"
             ) } elseif ($tracked) {
             return @(
