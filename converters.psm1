@@ -1,7 +1,7 @@
 using module ".\shared_types.psm1"
 using module ".\utils.psm1"
 
-$TEST_PREFIX = "LR-Test---"
+# $TEST_PREFIX = "LR-Test---"
 
 # Json Preparation
 function RulesDataFromJsonData ([DataPacket]$data_packet) {
@@ -123,7 +123,8 @@ function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
         services = @($data.services | ForEach-Object { "${TEST_PREFIX}$_" })
     }
 
-    if ($data.comment) { $body["comment"] = $data.comment }
+    [String]$comment = Join @( (Join $data.updaterequests ", "), $data.comment) " - "
+    if ($comment) { $body["comment"] = $comment }
     if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = $name }
     return $body
 }
@@ -136,6 +137,7 @@ function ImageFromSecurityGroup ([DataPacket]$data_packet) {
         Join @($_.address, $_.net) "/"
     }); [Array]::Sort($ip_addresses)
     $image = @{
+        date_creation = $data["date_creation"]
         name = $name
         group_type = "IPSET"
         ip_addresses = $ip_addresses
@@ -158,6 +160,7 @@ function ImageFromService ([DataPacket]$data_packet) {
         Join @($_.protocol, $port_range) ":"
     }); [Array]::Sort($ports)
     $image =  @{
+        date_creation = $data["date_creation"]
         name = $name
         ports = $ports
     }
@@ -173,6 +176,7 @@ function ImageFromRule ([DataPacket]$data_packet) {
     $data = $data_packet.data
     $name = "${TEST_PREFIX}$($data.name)"
     $image = @{
+        date_creation = $data["date_creation"]
         gateway = $data.gateway
         servicerequest = $data.servicerequest
         index = $data.index
@@ -182,9 +186,9 @@ function ImageFromRule ([DataPacket]$data_packet) {
         destination_type = if ($data.destinations.Length) { "Group" } else { "Any" }
         service_type = if ($data.services.Length) { "Service" } else { "Any" }
 
-        sources = @($data.sources | ForEach-Object { "${TEST_PREFIX}$_" })
-        destinations = @($data.destinations | ForEach-Object { "${TEST_PREFIX}$_" })
-        services = @($data.services | ForEach-Object { "${TEST_PREFIX}$_" })
+        sources = [String[]]@($data.sources | ForEach-Object { "${TEST_PREFIX}$_" })
+        services = [String[]]@($data.services | ForEach-Object { "${TEST_PREFIX}$_" })
+        destinations = [String[]]@($data.destinations | ForEach-Object { "${TEST_PREFIX}$_" })
     }
 
     if ($data.comment) { $image["comment"] = $data.comment }
