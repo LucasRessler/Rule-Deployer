@@ -8,7 +8,7 @@ function Get-SecurityGroupsConfig ([Hashtable]$config) {
         format = @{
             name = @{
                 dbg_name = "Security Group Name"
-                regex = $config.regex.resource_name
+                regex = $config.regex.group_name
                 required_for_delete = $true
                 is_unique = $true
             }
@@ -36,6 +36,7 @@ function Get-SecurityGroupsConfig ([Hashtable]$config) {
                 regex = $config.regex.servicerequest
                 is_optional = $true
                 is_array = $true
+                postparser = { param($value) NormalizeArray $value }
             }
         }
         excel_format = @(
@@ -60,7 +61,7 @@ function Get-ServicesConfig ([Hashtable]$config) {
         format = @{
             name = @{
                 dbg_name = "Service Name"
-                regex = $config.regex.resource_name
+                regex = $config.regex.group_name
                 required_for_delete = $true
                 is_unique = $true
             }
@@ -84,6 +85,7 @@ function Get-ServicesConfig ([Hashtable]$config) {
                 regex = $config.regex.servicerequest
                 is_optional = $true
                 is_array = $true
+                postparser = { param($value) NormalizeArray $value }
             }
         }
         excel_format = @(
@@ -115,7 +117,7 @@ function Get-RulesConfig ([Hashtable]$config) {
             }
             name = @{
                 dbg_name = "Rule Name"
-                regex = $config.regex.resource_name
+                regex = $config.regex.group_name
                 generator = {
                     param([Hashtable]$data)
                     Join @($data.servicerequest, $data.index, "Auto") "_"
@@ -124,7 +126,7 @@ function Get-RulesConfig ([Hashtable]$config) {
             sources = @{
                 dbg_name = "NSX-Source"
                 regex_info = "Please use a Security Group Name or 'any'"
-                regex = $config.regex.resource_name
+                regex = $config.regex.group_name
                 is_array = $true
                 postparser = { param($value) ParseArrayWithAny $value }
                 subparser = {
@@ -137,7 +139,7 @@ function Get-RulesConfig ([Hashtable]$config) {
             destinations = @{
                 dbg_name = "NSX-Destination"
                 regex_info = "Please use a Security Group Name or 'any'"
-                regex = $config.regex.resource_name
+                regex = $config.regex.group_name
                 is_array = $true
                 postparser = { param($value) ParseArrayWithAny $value }
                 subparser = {
@@ -150,7 +152,7 @@ function Get-RulesConfig ([Hashtable]$config) {
             services = @{
                 dbg_name = "NSX-Service"
                 regex_info = "Please use a Service Name or 'any'"
-                regex = $config.regex.resource_name
+                regex = $config.regex.group_name
                 is_array = $true
                 postparser = { param($value) ParseArrayWithAny $value }
                 subparser = {
@@ -186,6 +188,7 @@ function Get-RulesConfig ([Hashtable]$config) {
                 regex = $config.regex.servicerequest
                 is_optional = $true
                 is_array = $true
+                postparser = { param($value) NormalizeArray $value }
             }
         }
         excel_format = @(
