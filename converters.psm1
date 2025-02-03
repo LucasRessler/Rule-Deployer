@@ -144,7 +144,7 @@ function ImageFromSecurityGroup ([DataPacket]$data_packet) {
 
     if ($data.comment) { $image["comment"] = $data.comment }
     if ($data.hostname) { $image["hostname"] = $data.hostname }
-    # if ($data.date_creation) { $image["date_creation"] = $data.date_creation }
+    if ($data.date_creation) { $image["date_creation"] = $data.date_creation }
     if ($data.servicerequest) { $image["servicerequest"] = $data.servicerequest }
     if ($data.updaterequests.Count) { $image["updaterequests"] = $data.updaterequests }
     $expanded = ExpandCollapsed $image @("name")
@@ -165,7 +165,7 @@ function ImageFromService ([DataPacket]$data_packet) {
     }
 
     if ($data.comment) { $image["comment"] = $data.comment }
-    # if ($data.date_creation) { $image["date_creation"] = $data.date_creation }
+    if ($data.date_creation) { $image["date_creation"] = $data.date_creation }
     if ($data.servicerequest) { $image["servicerequest"] = $data.servicerequest }
     if ($data.updaterequests.Count) { $image["updaterequests"] = $data.updaterequests }
     $expanded = ExpandCollapsed $image @("name")
@@ -191,7 +191,7 @@ function ImageFromRule ([DataPacket]$data_packet) {
     }
 
     if ($data.comment) { $image["comment"] = $data.comment }
-    # if ($data.date_creation) { $image["date_creation"] = $data.date_creation }
+    if ($data.date_creation) { $image["date_creation"] = $data.date_creation }
     if ($data.updaterequests.Count) { $image["updaterequests"] = $data.updaterequests}
     $expanded = ExpandCollapsed $image @("gateway", "servicerequest", "index")
     return @{ $data_packet.tenant = @{ rules = $expanded } }
