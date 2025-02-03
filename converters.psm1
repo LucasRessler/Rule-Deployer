@@ -137,7 +137,6 @@ function ImageFromSecurityGroup ([DataPacket]$data_packet) {
         Join @($_.address, $_.net) "/"
     }); [Array]::Sort($ip_addresses)
     $image = @{
-        date_creation = $data["date_creation"]
         name = $name
         group_type = "IPSET"
         ip_addresses = $ip_addresses
@@ -145,6 +144,7 @@ function ImageFromSecurityGroup ([DataPacket]$data_packet) {
 
     if ($data.comment) { $image["comment"] = $data.comment }
     if ($data.hostname) { $image["hostname"] = $data.hostname }
+    # if ($data.date_creation) { $image["date_creation"] = $data.date_creation }
     if ($data.servicerequest) { $image["servicerequest"] = $data.servicerequest }
     if ($data.updaterequests.Count) { $image["updaterequests"] = $data.updaterequests }
     $expanded = ExpandCollapsed $image @("name")
@@ -160,12 +160,12 @@ function ImageFromService ([DataPacket]$data_packet) {
         Join @($_.protocol, $port_range) ":"
     }); [Array]::Sort($ports)
     $image =  @{
-        date_creation = $data["date_creation"]
         name = $name
         ports = $ports
     }
 
     if ($data.comment) { $image["comment"] = $data.comment }
+    # if ($data.date_creation) { $image["date_creation"] = $data.date_creation }
     if ($data.servicerequest) { $image["servicerequest"] = $data.servicerequest }
     if ($data.updaterequests.Count) { $image["updaterequests"] = $data.updaterequests }
     $expanded = ExpandCollapsed $image @("name")
@@ -176,7 +176,6 @@ function ImageFromRule ([DataPacket]$data_packet) {
     $data = $data_packet.data
     $name = "${TEST_PREFIX}$($data.name)"
     $image = @{
-        date_creation = $data["date_creation"]
         gateway = $data.gateway
         servicerequest = $data.servicerequest
         index = $data.index
@@ -192,6 +191,7 @@ function ImageFromRule ([DataPacket]$data_packet) {
     }
 
     if ($data.comment) { $image["comment"] = $data.comment }
+    # if ($data.date_creation) { $image["date_creation"] = $data.date_creation }
     if ($data.updaterequests.Count) { $image["updaterequests"] = $data.updaterequests}
     $expanded = ExpandCollapsed $image @("gateway", "servicerequest", "index")
     return @{ $data_packet.tenant = @{ rules = $expanded } }
