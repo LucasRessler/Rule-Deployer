@@ -8,15 +8,6 @@ function DiagnoseFailure {
         [ApiAction[]]$failed_actions
     )
 
-    function scrape_recursive([Hashtable]$nested, [Hashtable]$store, [String[]]$store_keys) {
-        [String[]]$keys = $nested.Keys
-        foreach ($key in $keys) {
-            if ($key -in $store_keys) { $store[$key] = $nested[$key] }
-            if ($nested[$key] -is [Hashtable]) { scrape_recursive $nested[$key] $store $store_keys }
-            else { $nested.Remove($key) }
-        }
-    }
-
     [Bool]$tried_create = [ApiAction]::Create -in $failed_actions
     [Bool]$tried_update = [ApiAction]::Update -in $failed_actions
     [Bool]$tried_delete = [ApiAction]::Delete -in $failed_actions
@@ -41,13 +32,16 @@ function DiagnoseFailure {
         }
     }
 
+
     # Check reverse dependencies
     [String[]]$dependees_found = @()
-    if ($resource_id -ne [ResourceId]::Rule) {
+    if ($tried_delete -and $resource_id -ne [ResourceId]::Rule) {
         [String]$name = $failed_packet.data["name"]
-        [Hashtable]$rules_for_this_tenant = $io_handle.nsx_image[$tenant]["rules"]
-        foreach ($gateway in $rules_for_this_tenant.Keys) {
-            [Hashtable]$service_requests = $rules_for_this_tenant[$gateway]
+        [Hashtable]$relevant_rules = @{}
+        [Hashtable]$this_tenant = $io_handle.nsx_image[$tenant]
+        if ($this_tenant -and $this_tenant["rules"]) { $relevant_rules = $this_tenant["rules"] }
+        foreach ($gateway in $relevant_rules.Keys) {
+            [Hashtable]$service_requests = $relevant_rules[$gateway]
             foreach ($service_request in $service_requests.Keys) {
                 [Hashtable]$indeces = $service_requests[$service_request]
                 foreach ($index in $indeces.Keys) {
