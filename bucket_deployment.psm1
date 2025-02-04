@@ -60,9 +60,10 @@ function DeploySingleBucket {
     [Int]$num_to_deploy = $bucket.to_deploy.Count
     if ($num_to_deploy -eq 0) { return 0 }
     if ($bucket.action_index -gt 0) {
-        [String]$prev_action = "$($bucket.GetPreviousAction())".ToLower()
+        [ApiAction]$prev_action = $bucket.GetPreviousAction()
+        [String]$pl = PluralityIn $num_to_deploy
         [String]$adverb = if ($action -eq $bucket.GetPreviousAction()) { "again" } else { "instead" }
-        Write-Host "I'll attempt to $("$action".ToLower()) the resource$(PluralityIn $num_to_deploy) that failed to $prev_action $adverb."
+        Write-Host "To compensate for the failed $prev_action-request$pl, I'll attempt to $("$action".ToLower()) the resource$pl $adverb."
     }
 
     Write-Host "Deploying $num_to_deploy ${action}-request$(PluralityIn $num_to_deploy)..."
@@ -168,7 +169,7 @@ function DeployAndAwaitBuckets {
                 -Hints (DiagnoseFailure $io_handle $failed_packet $bucket.actions)
             [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $failed_packet.row_index)
             $Host.UI.WriteErrorLine($message)
-            $io_handle.UpdateOutput($resource_config, $val)
+            $io_handle.UpdateOutput($failed_packet.resource_config, $val)
         }
     }
 
