@@ -146,9 +146,13 @@ function DeployAndAwaitBuckets {
     }
 
     function NothingMoreToDo { Write-Host "Nothing more to do." }
+    Write-Host "Ready to deploy $(Format-List @($deploy_buckets | ForEach-Object {
+        [Int]$n = $_.to_deploy.Count
+        if ($n -gt 0) { "$n $($_.GetCurrentAction())-request$(PluralityIn $n)" }
+    }))!"
+
     while (($deploy_buckets | ForEach-Object { $_.QueuedActions() } | Measure-Object -Sum).Sum -gt 0) {
         $deploy_buckets | ForEach-Object { AlignBucket -bucket $_ -io_handle $io_handle }
-
         if (($deploy_buckets | ForEach-Object {
             DeploySingleBucket -bucket $_ @shared_params
         } | Measure-Object -Sum).Sum -eq 0) { NothingMoreToDo; return }
