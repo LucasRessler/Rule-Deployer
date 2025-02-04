@@ -132,7 +132,7 @@ function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
 # Image Converters
 function ImageFromSecurityGroup ([DataPacket]$data_packet) {
     $data = $data_packet.data
-    $name = "$TEST_PREFIX$($data.name)"
+    $name = $data.name
     $ip_addresses = @($data.ip_addresses | ForEach-Object {
         Join @($_.address, $_.net) "/"
     }); [Array]::Sort($ip_addresses)
@@ -153,7 +153,7 @@ function ImageFromSecurityGroup ([DataPacket]$data_packet) {
 
 function ImageFromService ([DataPacket]$data_packet) {
     $data = $data_packet.data
-    $name = "$TEST_PREFIX$($data.name)"
+    $name = $data.name
     $ports = @($data.ports | ForEach-Object {
         $port_range = $_.start
         if ($_.end -ne $_.start) { $port_range += "-$($_.end)"}
@@ -174,7 +174,7 @@ function ImageFromService ([DataPacket]$data_packet) {
 
 function ImageFromRule ([DataPacket]$data_packet) {
     $data = $data_packet.data
-    $name = "${TEST_PREFIX}$($data.name)"
+    $name = $data.name
     $image = @{
         gateway = $data.gateway
         servicerequest = $data.servicerequest
@@ -185,9 +185,9 @@ function ImageFromRule ([DataPacket]$data_packet) {
         destination_type = if ($data.destinations.Length) { "Group" } else { "Any" }
         service_type = if ($data.services.Length) { "Service" } else { "Any" }
 
-        sources = [String[]]@($data.sources | ForEach-Object { "${TEST_PREFIX}$_" })
-        services = [String[]]@($data.services | ForEach-Object { "${TEST_PREFIX}$_" })
-        destinations = [String[]]@($data.destinations | ForEach-Object { "${TEST_PREFIX}$_" })
+        sources = [String[]]@($data.sources | ForEach-Object { "$_" })
+        services = [String[]]@($data.services | ForEach-Object { "$_" })
+        destinations = [String[]]@($data.destinations | ForEach-Object { "$_" })
     }
 
     if ($data.comment) { $image["comment"] = $data.comment }
