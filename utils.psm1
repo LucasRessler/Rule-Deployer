@@ -154,7 +154,7 @@ function CustomConvertToJson {
             return "${out}$(if ($comma) { "`n" + $ind * $ilv })}"
         }
 
-        ($null -eq $obj) { return "${out}null"}
+        ($null -eq $obj) { return "${out}[]"}
 
         default { return "${out}$($obj.ToString() | ConvertTo-Json -Depth 1)"}
     }
