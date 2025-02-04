@@ -121,7 +121,7 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
     # Display Request Plan
     $actions_info = (Join ($actions | ForEach-Object { "$_" }) "/")
     $resources_info = Join ($resource_config_groups | ForEach-Object {
-        Join ($_ | ForEach-Object { "$($_.resource_name)s" }) " + "
+        Format-List ($_ | ForEach-Object { "$($_.resource_name)s" })
     }) ", then "
     Write-Host "Ready!`n"
     Write-Host "Resource Order: $resources_info"
