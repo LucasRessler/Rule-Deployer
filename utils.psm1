@@ -4,6 +4,13 @@ function Join ([Object[]]$arr, [String]$delim) {
     return $s
 }
 
+function Format-List ([Object[]]$arr) {
+    [Int]$end = $arr.Count - 1
+    [Int]$part_end = [Math]::Max(0, $arr.Count - 2)
+    [String]$part = if ($end -gt 0) { Join $arr[0..$part_end] ", " }
+    return Join @($part, $arr[$arr.Count - 1]) " and "
+}
+
 function Format-Error {
     param ([String]$message, [String]$cause, [String[]]$hints)
     if ($cause) { $message += "`n  Caused by: " + (Join $cause.Split([Environment]::NewLine) "`n  ")}
