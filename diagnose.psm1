@@ -73,17 +73,17 @@ function DiagnoseFailure {
             ) }
         }
         ($tried_create) {
-            if ($tracked) {
-            return @(
-                "The resource was found in the NSX-Image"
-                "It's very likely that it already exists"
-                "You could try updating it instead"
-            ) } elseif ($depends_not_found.Count) {
+            if ($depends_not_found.Count) {
             return @( # Can only happen for FW Rules
                 "Make sure that all security groups and services used in the rule exist"
                 "It's likely that one or more of the following resources don't exist:"
                 @($depends_not_found | ForEach-Object { "- $_" })
                 "Note: I can only make statements for resources that were modified with this tool"
+            ) } elseif ($tracked) {
+            return @(
+                "The resource was found in the NSX-Image"
+                "It's very likely that it already exists"
+                "You could try updating it instead"
             ) } else {
             return @(
                 "The resource was not found in the NSX-Image"
