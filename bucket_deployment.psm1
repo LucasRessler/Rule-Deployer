@@ -77,6 +77,8 @@ function DeploySingleBucket {
         [String]$deployment_name = "$action $(Join @($resource_config.resource_name, $name) " ") - $date - LR Automation"
 
         try {
+            [String]$message = "$action-request for resource at $($data_packet.origin_info): '$deployment_name'"
+            $io_handle.UpdateOutput($resource_config, [OutputValue]::New($message))
             $data_packet.deployment_id = $api_handle.Deploy($deployment_name, $data_packet.tenant, $resource_config.catalog_id, $inputs)
             $bucket.deployed += $data_packet
         } catch {
@@ -105,6 +107,7 @@ function AwaitSingleBucket {
 
     $bucket.to_deploy = @()
     [ApiAction]$action = $bucket.GetCurrentAction()
+    [String]$action_verb = "$action".ToLower()
     [Int]$num_deployed = $bucket.deployed.Count
     if ($num_deployed -eq 0) { return 0 }
 
@@ -117,7 +120,7 @@ function AwaitSingleBucket {
 
         if ($status -eq [DeploymentStatus]::Successful) {
             [String]$short_info = "$action Successful"
-            [String]$message = "Resource at $($deployment.origin_info) was ${$action_verb}d successfully."
+            [String]$message = "Resource at $($deployment.origin_info) was ${action_verb}d successfully."
             [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.success, $deployment.row_index)
             $io_handle.UpdateOutput($resource_config, $val)
 
@@ -127,7 +130,7 @@ function AwaitSingleBucket {
     }
 
     [Int]$num_successful = $num_deployed - $bucket.to_deploy.Count
-    Write-Host "$num_successful/$num_deployed $("$action".ToLower())d sucessfully$(Punctuate $num_successful $num_deployed)"
+    Write-Host "$num_successful/$num_deployed ${action_verb}d sucessfully$(Punctuate $num_successful $num_deployed)"
     return $bucket.to_deploy.Count
 }
 

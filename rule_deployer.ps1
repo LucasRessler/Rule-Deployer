@@ -175,6 +175,7 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
         }
     } finally {
         PrintDivider
+        $io_handle.GetLog() | Set-Content -Path "$PSScriptRoot\$(Get-Date -Format "yy-MM-dd_hh-mm-ss")_ruledeployer.log"
         Write-Host "Releasing IO-Handle..."
         $io_handle.Release()
     }

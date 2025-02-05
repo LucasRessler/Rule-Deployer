@@ -8,6 +8,9 @@ class OutputValue {
     [String]$excel_color
     [Int]$excel_index
 
+    OutputValue ([String]$message) {
+        $this.message = $message
+    }
     OutputValue ([String]$message, [String]$short_info, [String]$excel_color, [Int]$excel_index) {
         $this.message = $message
         $this.short_info = $short_info
@@ -35,6 +38,10 @@ class IOHandle {
             return get_recursive $keys[1..$keys.Count] $sub
         }
         return get_recursive $image_keys $this.nsx_image
+    }
+
+    [Void] AddLog ([String]$message) {
+        $this.log += "[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss.ff")] $message"
     }
 
     [Void] UpdateNsxImage ([Hashtable]$expanded_data, [ApiAction]$action) {
@@ -148,13 +155,15 @@ class ExcelHandle : IOHandle {
     [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {
         [Int]$output_column = $resource_config.excel_format.Length + 1
         [String]$sheet_name = $resource_config.excel_sheet_name
-        $this.log += $value.message
+        [String]$col = $value.excel_color
+        $this.AddLog($value.message)
+        if (-not $value.short_info) { return }
         try { $sheet = $this.workbook.Worksheets.Item($sheet_name) }
         catch { throw Format-Error -Message "Sheet '$sheet_name' could not be opened" -Cause $_.Exception.Message }
         $cell = $sheet.Cells.Item($value.excel_index, $output_column)
         if ($cell.Text -ne $value.short_info) {
             $cell.Value = Join @($cell.Text, $value.short_info) ", "
-            $cell.Font.Color = $value.excel_color
+            if ($col) { $cell.Font.Color = $col }
         }
     }
     
@@ -217,6 +226,6 @@ class JsonHandle : IOHandle {
     }
 
     [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {
-        $this.log += $value.message
+        $this.AddLog($value.message)
     }
 }
