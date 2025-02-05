@@ -8,10 +8,10 @@ using module ".\utils.psm1"
 
 [CmdletBinding()]
 param (
-    [String]$ConfigPath = "$PSScriptRoot\config.json",
-    [String]$InlineJson,
+    [String]$Action,
     [String]$Tenant,
-    [String]$Action
+    [String]$InlineJson,
+    [String]$ConfigPath = "$PSScriptRoot\config.json"
 )
 
 . "$PSScriptRoot\get_config.ps1"
