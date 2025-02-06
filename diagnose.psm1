@@ -64,7 +64,7 @@ function DiagnoseFailure {
             return @( # Can only happen for FW Rules
                 "Make sure that all security groups and services used in the rule exist"
                 "It's likely that one or more of the following resources don't exist:"
-                @($depends_not_found | ForEach-Object { "- $_" })
+                @($depends_not_found | ForEach-Object { "- '$_'" })
                 "Note: I can only make statements for resources that were modified with this tool"
             ) } else {
             return @(
@@ -77,7 +77,7 @@ function DiagnoseFailure {
             return @( # Can only happen for FW Rules
                 "Make sure that all security groups and services used in the rule exist"
                 "It's likely that one or more of the following resources don't exist:"
-                @($depends_not_found | ForEach-Object { "- $_" })
+                @($depends_not_found | ForEach-Object { "- '$_'" })
                 "Note: I can only make statements for resources that were modified with this tool"
             ) } elseif ($tracked) {
             return @(
@@ -94,21 +94,20 @@ function DiagnoseFailure {
             ) }
         }
         ($tried_update) {
-            if ($depends_not_found.Count) {
-            return @( # Can only happen for FW Rules
-                "Make sure that all security groups and services used in the rule exist"
-                "It's likely that one or more of the following resources don't exist:"
-                @($depends_not_found | ForEach-Object { "- $_" })
-                "Note: I can only make statements for resources that were modified with this tool"
-            ) } elseif ($tracked) {
-            return @(
-                "The resource was found in the NSX-Image"
-                "It's possible that the API has run into a collision"
-            ) } else {
-            return @(
+            if (-not $tracked) {
                 "The resource was not found in the NSX-Image"
                 "It's likely that it doesn't exist yet"
                 "You could try creating it instead"
+            } elseif ($depends_not_found.Count) {
+            return @( # Can only happen for FW Rules
+                "Make sure that all security groups and services used in the rule exist"
+                "It's likely that one or more of the following resources don't exist:"
+                @($depends_not_found | ForEach-Object { "- '$_'" })
+                "Note: I can only make statements for resources that were modified with this tool"
+            ) } else {
+            return @(
+                "The resource was found in the NSX-Image"
+                "It's possible that the API has run into a collision"
             ) }
         }
         ($tried_delete) {
@@ -116,7 +115,7 @@ function DiagnoseFailure {
             return @( # Can only happen for Security Groups and Services
                 "Make sure that no rules still use this resource"
                 "It's likely that one or more of the following rules still use it:"
-                @($dependees_found | ForEach-Object { "- $_" })
+                @($dependees_found | ForEach-Object { "- '$_'" })
                 "Note: I can only make statements for resources that were modified with this tool"
             ) } elseif ($tracked) {
             return @(
