@@ -3,6 +3,7 @@ function Get-Config ([String]$conf_path) {
     catch { throw Format-Error -Message "The config could not be loaded" -cause $_.Exception.Message }
     $faults = Assert-Format $config @{
         nsx_image_path = @{}
+        log_directory = @{}
         api = @{
             base_url = @{}
             catalog_ids = @{ security_groups = @{}; services = @{}; rules = @{} }
@@ -28,6 +29,7 @@ function Get-Config ([String]$conf_path) {
 
     @{
         nsx_image_path = $config.nsx_image_path
+        log_directory = $config.log_directory
         excel = $config.excel
         api = @{
             catalog_ids = $config.api.catalog_ids
