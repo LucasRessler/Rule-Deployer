@@ -104,8 +104,7 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
         [JsonHandle]$json_handle = [JsonHandle]::New($inline_json, $config.nsx_image_path, $tenant) # might throw
         foreach ($unused_resource in $json_handle.UnusedResources()) { $Host.UI.WriteWarningLine("Unused $unused_resource") }
         $json_handle
-    }
-    else {
+    } else {
         Write-Host "Opening Excel-instance..."
         if (-not $tenant) { throw "Please provide a tenant name" }
         [ExcelHandle]$excel_handle = [ExcelHandle]::New($config.nsx_image_path, $tenant)
@@ -175,7 +174,6 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
         }
     } finally {
         PrintDivider
-        $io_handle.GetLog() | Set-Content -Path "$PSScriptRoot\$(Get-Date -Format "yy-MM-dd_hh-mm-ss")_ruledeployer.log"
         Write-Host "Releasing IO-Handle..."
         $io_handle.Release()
     }
