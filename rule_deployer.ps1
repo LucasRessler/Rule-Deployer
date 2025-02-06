@@ -50,7 +50,7 @@ function GetAndParseResourceData {
             [String]$err_message = $_.Exception.Message
             [String]$short_info = $err_message.Split([System.Environment]::NewLine)[0].Split(":")[0]
             [String]$message = Format-Error -Message "Parse error at $($data_packet.origin_info)" -Cause "$err_message"
-            [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.parse_error, $data_packet.row_index)
+            [OutputValue]$val = [OutputValue]::New([LogLevel]::Error, $message, $short_info, $config.color.parse_error, $data_packet.row_index)
             $Host.UI.WriteErrorLine($message)
             $io_handle.UpdateOutput($resource_config, $val)
         }
@@ -104,8 +104,7 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
         [JsonHandle]$json_handle = [JsonHandle]::New($inline_json, $config.nsx_image_path, $tenant) # might throw
         foreach ($unused_resource in $json_handle.UnusedResources()) { $Host.UI.WriteWarningLine("Unused $unused_resource") }
         $json_handle
-    }
-    else {
+    } else {
         Write-Host "Opening Excel-instance..."
         if (-not $tenant) { throw "Please provide a tenant name" }
         [ExcelHandle]$excel_handle = [ExcelHandle]::New($config.nsx_image_path, $tenant)
@@ -175,8 +174,8 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
         }
     } finally {
         PrintDivider
-        $io_handle.GetLog() | Set-Content -Path "$PSScriptRoot\$(Get-Date -Format "yy-MM-dd_hh-mm-ss")_ruledeployer.log"
         Write-Host "Releasing IO-Handle..."
+        $io_handle.GetLog() | Set-Content -Path "$($config.log_directory)\ruledeployer_$(Get-Date -Format "yyyy-MM-dd_HH-mm-ss").log"
         $io_handle.Release()
     }
 }
