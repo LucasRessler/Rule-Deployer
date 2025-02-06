@@ -2,17 +2,22 @@ using module ".\shared_types.psm1"
 using module ".\converters.psm1"
 using module ".\utils.psm1"
 
+enum LogLevel {
+    Info
+    Warn
+    Error
+}
+
 class OutputValue {
-    [String]$message
+    [LogLevel]$log_level
     [String]$short_info
+    [String]$message
     [String]$excel_color
     [Int]$excel_index
 
-    OutputValue ([String]$message) {
+    OutputValue ([LogLevel]$log_level, [String]$message, [String]$short_info, [String]$excel_color, [Int]$excel_index) {
         $this.message = $message
-    }
-    OutputValue ([String]$message, [String]$short_info, [String]$excel_color, [Int]$excel_index) {
-        $this.message = $message
+        $this.log_level = $log_level
         $this.short_info = $short_info
         $this.excel_color = $excel_color
         $this.excel_index = $excel_index
@@ -40,8 +45,14 @@ class IOHandle {
         return get_recursive $image_keys $this.nsx_image
     }
 
-    [Void] AddLog ([String]$message) {
-        $this.log += "[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss.ff")] $message"
+    [Void] AddLog ([LogLevel]$log_level, [String]$message) {
+        [String]$date = Get-Date -Format "yyyy-MM-dd HH:mm:ss.ff"
+        [String]$level = "$log_level".ToUpper()
+        $level += " " * (5 - $level.Length)
+        $this.log += $message.Split([System.Environment]::NewLine) | ForEach-Object {
+            [String]$line = "$date  $level  $_"
+            $level = "  -  "; $line
+        }
     }
 
     [Void] UpdateNsxImage ([Hashtable]$expanded_data, [ApiAction]$action) {
@@ -156,7 +167,7 @@ class ExcelHandle : IOHandle {
         [Int]$output_column = $resource_config.excel_format.Length + 1
         [String]$sheet_name = $resource_config.excel_sheet_name
         [String]$col = $value.excel_color
-        $this.AddLog($value.message)
+        $this.AddLog($value.log_level, $value.message)
         if (-not $value.short_info) { return }
         try { $sheet = $this.workbook.Worksheets.Item($sheet_name) }
         catch { throw Format-Error -Message "Sheet '$sheet_name' could not be opened" -Cause $_.Exception.Message }
@@ -226,6 +237,6 @@ class JsonHandle : IOHandle {
     }
 
     [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {
-        $this.AddLog($value.message)
+        $this.AddLog($value.log_level, $value.message)
     }
 }
