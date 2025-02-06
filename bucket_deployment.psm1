@@ -77,15 +77,15 @@ function DeploySingleBucket {
         [String]$deployment_name = "$action $(Join @($resource_config.resource_name, $name) " ") - $date - LR Automation"
 
         try {
-            $io_handle.AddLog("Deployed $action-request for $($data_packet.origin_info): '$deployment_name'")
+            $io_handle.AddLog([LogLevel]::Info, "Deployed $action-request for $($data_packet.origin_info): '$deployment_name'")
             $data_packet.deployment_id = $api_handle.Deploy($deployment_name, $data_packet.tenant, $resource_config.catalog_id, $inputs)
             $bucket.deployed += $data_packet
         } catch {
             [String]$short_info = "Deployment Failed"
             [String]$message = "Deploy error at $($data_packet.origin_info): $($_.Exception.Message)"
-            [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $data_packet.row_index)
-            $Host.UI.WriteErrorLine($message)
+            [OutputValue]$val = [OutputValue]::New([LogLevel]::Error, $message, $short_info, $config.color.dploy_error, $data_packet.row_index)
             $io_handle.UpdateOutput($resource_config, $val)
+            $Host.UI.WriteErrorLine($message)
         }
 
         Start-Sleep $resource_config.ddos_sleep_time # Mandatory because of DDoS protection probably
@@ -120,7 +120,7 @@ function AwaitSingleBucket {
         if ($status -eq [DeploymentStatus]::Successful) {
             [String]$short_info = "$action Successful"
             [String]$message = "Resource at $($deployment.origin_info) was ${action_verb}d successfully"
-            [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.success, $deployment.row_index)
+            [OutputValue]$val = [OutputValue]::New([LogLevel]::Info, $message, $short_info, $config.color.success, $deployment.row_index)
             $io_handle.UpdateOutput($resource_config, $val)
 
             [Hashtable]$image = $deployment.GetImageConversion()
@@ -174,9 +174,9 @@ function DeployAndAwaitBuckets {
             [String]$short_info = "$actions_str Failed"
             [String]$message = Format-Error -Message "$requests_str for resource at $($failed_packet.origin_info) failed" `
                 -Hints (DiagnoseFailure $io_handle $failed_packet $bucket.actions)
-            [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $failed_packet.row_index)
-            $Host.UI.WriteErrorLine($message)
+            [OutputValue]$val = [OutputValue]::New([LogLevel]::Error, $message, $short_info, $config.color.dploy_error, $failed_packet.row_index)
             $io_handle.UpdateOutput($failed_packet.resource_config, $val)
+            $Host.UI.WriteErrorLine($message)
         }
     }
 
