@@ -2,22 +2,14 @@ using module ".\shared_types.psm1"
 using module ".\converters.psm1"
 using module ".\utils.psm1"
 
-enum LogLevel {
-    Info
-    Warn
-    Error
-}
-
 class OutputValue {
-    [LogLevel]$log_level
     [String]$short_info
     [String]$message
     [String]$excel_color
     [Int]$excel_index
 
-    OutputValue ([LogLevel]$log_level, [String]$message, [String]$short_info, [String]$excel_color, [Int]$excel_index) {
+    OutputValue ([String]$message, [String]$short_info, [String]$excel_color, [Int]$excel_index) {
         $this.message = $message
-        $this.log_level = $log_level
         $this.short_info = $short_info
         $this.excel_color = $excel_color
         $this.excel_index = $excel_index
@@ -27,7 +19,6 @@ class OutputValue {
 class IOHandle {
     [String]$nsx_image_path
     [Hashtable]$nsx_image
-    [String[]]$log = @()
     
     IOHandle ([String]$nsx_image_path) {
         $this.nsx_image_path = $nsx_image_path
@@ -43,16 +34,6 @@ class IOHandle {
             return get_recursive $keys[1..$keys.Count] $sub
         }
         return get_recursive $image_keys $this.nsx_image
-    }
-
-    [Void] AddLog ([LogLevel]$log_level, [String]$message) {
-        [String]$date = Get-Date -Format "yyyy-MM-dd HH:mm:ss.ff"
-        [String]$level = "$log_level".ToUpper()
-        $level += " " * (5 - $level.Length)
-        $this.log += $message.Split([System.Environment]::NewLine) | ForEach-Object {
-            [String]$line = "$date  $level  $_"
-            $level = "  -  "; $line
-        }
     }
 
     [Void] UpdateNsxImage ([Hashtable]$expanded_data, [ApiAction]$action) {
@@ -84,10 +65,6 @@ class IOHandle {
     
     [Void] SaveNsxImage () {
         CustomConvertToJson -obj $this.nsx_image | Set-Content -Path $this.nsx_image_path
-    }
-
-    [String] GetLog () {
-        return Join $this.log "`n"
     }
 
     [DataPacket[]]GetResourceData ([Hashtable]$resource_config) { throw [System.NotImplementedException] "GetResourceData must be implemented!" }
@@ -167,7 +144,6 @@ class ExcelHandle : IOHandle {
         [Int]$output_column = $resource_config.excel_format.Length + 1
         [String]$sheet_name = $resource_config.excel_sheet_name
         [String]$col = $value.excel_color
-        $this.AddLog($value.log_level, $value.message)
         if (-not $value.short_info) { return }
         try { $sheet = $this.workbook.Worksheets.Item($sheet_name) }
         catch { throw Format-Error -Message "Sheet '$sheet_name' could not be opened" -Cause $_.Exception.Message }
@@ -236,7 +212,5 @@ class JsonHandle : IOHandle {
         } | ForEach-Object { PrepareJsonData -data_packet $_ })
     }
 
-    [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {
-        $this.AddLog($value.log_level, $value.message)
-    }
+    [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {}
 }
