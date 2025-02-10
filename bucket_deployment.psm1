@@ -2,6 +2,7 @@ using module ".\shared_types.psm1"
 using module ".\api_handle.psm1"
 using module ".\io_handle.psm1"
 using module ".\parsing.psm1"
+using module ".\logger.psm1"
 using module ".\utils.psm1"
 
 class DeployBucket {
@@ -52,7 +53,8 @@ function DeploySingleBucket {
         [DeployBucket]$bucket,
         [ApiHandle]$api_handle,
         [IoHandle]$io_handle,
-        [Hashtable]$config
+        [Hashtable]$config,
+        [Logger]$logger
     )
 
     $bucket.deployed = @()
@@ -63,10 +65,10 @@ function DeploySingleBucket {
         [ApiAction]$prev_action = $bucket.GetPreviousAction()
         [String]$pl = PluralityIn $num_to_deploy
         [String]$adverb = if ($action -eq $bucket.GetPreviousAction()) { "again" } else { "instead" }
-        Write-Host "$num_to_deploy $prev_action-request$pl previously failed, I'll attempt to $("$action".ToLower()) the resource$pl $adverb."
+        $logger.Info("$num_to_deploy $prev_action-request$pl previously failed, I'll attempt to $("$action".ToLower()) the resource$pl $adverb.")
     }
 
-    Write-Host "Deploying $num_to_deploy ${action}-request$(PluralityIn $num_to_deploy)..."
+    $logger.Info("Deploying $num_to_deploy ${action}-request$(PluralityIn $num_to_deploy)...")
     for ($i = 0; $i -lt $num_to_deploy; $i++) {
         ShowPercentage $i $num_to_deploy
         [DataPacket]$data_packet = $bucket.to_deploy[$i]
@@ -77,22 +79,22 @@ function DeploySingleBucket {
         [String]$deployment_name = "$action $(Join @($resource_config.resource_name, $name) " ") - $date - LR Automation"
 
         try {
-            $io_handle.AddLog([LogLevel]::Info, "Deployed $action-request for $($data_packet.origin_info): '$deployment_name'")
+            $logger.Debug("Deploying $action-request for $($data_packet.origin_info): '$deployment_name'")
             $data_packet.deployment_id = $api_handle.Deploy($deployment_name, $data_packet.tenant, $resource_config.catalog_id, $inputs)
             $bucket.deployed += $data_packet
         } catch {
             [String]$short_info = "Deployment Failed"
             [String]$message = "Deploy error at $($data_packet.origin_info): $($_.Exception.Message)"
-            [OutputValue]$val = [OutputValue]::New([LogLevel]::Error, $message, $short_info, $config.color.dploy_error, $data_packet.row_index)
+            [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $data_packet.row_index)
             $io_handle.UpdateOutput($resource_config, $val)
-            $Host.UI.WriteErrorLine($message)
+            $logger.Error($message)
         }
 
         Start-Sleep $resource_config.ddos_sleep_time # Mandatory because of DDoS protection probably
     }
 
     [Int]$num_deployed = $bucket.deployed.Count
-    Write-Host "$num_deployed/$num_to_deploy deployed$(Punctuate $num_deployed $num_to_deploy)"
+    $logger.Info("$num_deployed/$num_to_deploy deployed$(Punctuate $num_deployed $num_to_deploy)")
     return $num_deployed
 }
 
@@ -101,7 +103,8 @@ function AwaitSingleBucket {
         [DeployBucket]$bucket,
         [ApiHandle]$api_handle,
         [IoHandle]$io_handle,
-        [Hashtable]$config
+        [Hashtable]$config,
+        [Logger]$logger
     )
 
     $bucket.to_deploy = @()
@@ -110,7 +113,7 @@ function AwaitSingleBucket {
     [Int]$num_deployed = $bucket.deployed.Count
     if ($num_deployed -eq 0) { return 0 }
 
-    Write-Host "Waiting for status of $num_deployed $action-request$(PluralityIn $num_deployed)..."
+    $logger.Info("Waiting for status of $num_deployed $action-request$(PluralityIn $num_deployed)...")
     for ($i = 0; $i -lt $num_deployed; $i++) {
         ShowPercentage $i $num_deployed
         [DataPacket]$deployment = $bucket.deployed[$i]
@@ -120,8 +123,9 @@ function AwaitSingleBucket {
         if ($status -eq [DeploymentStatus]::Successful) {
             [String]$short_info = "$action Successful"
             [String]$message = "Resource at $($deployment.origin_info) was ${action_verb}d successfully"
-            [OutputValue]$val = [OutputValue]::New([LogLevel]::Info, $message, $short_info, $config.color.success, $deployment.row_index)
+            [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.success, $deployment.row_index)
             $io_handle.UpdateOutput($resource_config, $val)
+            $logger.Debug($message)
 
             [Hashtable]$image = $deployment.GetImageConversion()
             $io_handle.UpdateNsxImage($image, $action)
@@ -129,7 +133,7 @@ function AwaitSingleBucket {
     }
 
     [Int]$num_successful = $num_deployed - $bucket.to_deploy.Count
-    Write-Host "$num_successful/$num_deployed ${action_verb}d sucessfully$(Punctuate $num_successful $num_deployed)"
+    $logger.Info("$num_successful/$num_deployed ${action_verb}d sucessfully$(Punctuate $num_successful $num_deployed)")
     return $bucket.to_deploy.Count
 }
 
@@ -138,28 +142,32 @@ function DeployAndAwaitBuckets {
         [DeployBucket[]]$deploy_buckets,
         [ApiHandle]$api_handle,
         [IoHandle]$io_handle,
-        [Hashtable]$config
+        [Hashtable]$config,
+        [Logger]$logger
     )
 
     [Hashtable]$shared_params = @{
         api_handle = $api_handle
         io_handle = $io_handle
         config = $config
+        logger = $logger
     }
 
-    function NothingMoreToDo { Write-Host "Nothing more to do." }
+    function NothingMoreToDo { $logger.Info("Nothing more to do.") }
     [String]$deployments_str = Format-List @($deploy_buckets | ForEach-Object {
         [Int]$n = $_.to_deploy.Count
         if ($n -gt 0) { "$n $($_.GetCurrentAction())-request$(PluralityIn $n)" }
     }); if (-not $deployments_str) { $deployments_str = "--" }
-    Write-Host "Queued deployments: $deployments_str"
+    $logger.Info("Queued deployments: $deployments_str")
 
     while (($deploy_buckets | ForEach-Object { $_.QueuedActions() } | Measure-Object -Sum).Sum -gt 0) {
+        $logger.section = "Deploy"
         $deploy_buckets | ForEach-Object { AlignBucket -bucket $_ -io_handle $io_handle }
         if (($deploy_buckets | ForEach-Object {
             DeploySingleBucket -bucket $_ @shared_params
         } | Measure-Object -Sum).Sum -eq 0) { NothingMoreToDo; return }
 
+        $logger.section = "Await"
         if (($deploy_buckets | ForEach-Object {
             AwaitSingleBucket -bucket $_ @shared_params
         } | Measure-Object -Sum).Sum -eq 0) { NothingMoreToDo; return }
@@ -174,9 +182,9 @@ function DeployAndAwaitBuckets {
             [String]$short_info = "$actions_str Failed"
             [String]$message = Format-Error -Message "$requests_str for resource at $($failed_packet.origin_info) failed" `
                 -Hints (DiagnoseFailure $io_handle $failed_packet $bucket.actions)
-            [OutputValue]$val = [OutputValue]::New([LogLevel]::Error, $message, $short_info, $config.color.dploy_error, $failed_packet.row_index)
+            [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $failed_packet.row_index)
             $io_handle.UpdateOutput($failed_packet.resource_config, $val)
-            $Host.UI.WriteErrorLine($message)
+            $logger.Error($message)
         }
     }
 
