@@ -1,4 +1,5 @@
 using module ".\io_handle.psm1"
+using module ".\logger.psm1"
 
 # Sub- and Post-Parsers
 function FailOnMatch ([String]$value, [String]$regex, [String]$fail_message) {
@@ -78,7 +79,8 @@ function ParseIntermediate {
     param(
         [DataPacket]$data_packet,
         [Hashtable]$unique_check_map,
-        [Bool]$only_deletion
+        [Bool]$only_deletion,
+        [Logger]$logger
     )
 
     [String[]]$errors = @()
@@ -153,7 +155,7 @@ function ParseIntermediate {
     foreach ($k in $format.Keys) { $data_packet.data.Remove($k) }
     foreach ($k in $data_packet.data.Keys) {
         $v = $data_packet.data[$k] 
-        if ($v) { Write-Warning "Unused value at $($data_packet.origin_info): {'$k': '$v'} will be ignored!" }
+        if ($v) { $logger.Warn("Unused value at $($data_packet.origin_info): {'$k': '$v'} will be ignored!") }
     }
     return $parsed_packet
 }
