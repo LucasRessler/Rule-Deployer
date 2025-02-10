@@ -4,6 +4,7 @@ using module ".\api_handle.psm1"
 using module ".\io_handle.psm1"
 using module ".\diagnose.psm1"
 using module ".\parsing.psm1"
+using module ".\logger.psm1"
 using module ".\utils.psm1"
 
 [CmdletBinding()]
@@ -18,25 +19,30 @@ param (
 . "$PSScriptRoot\resource_configs.ps1"
 
 [Int]$EXCEL_OPEN_ATTEMPTS = 3
+[Logger]$logger = [Logger]::New($Host.UI)
+[String]$LOG_PATH = "ruledeployer_$(Get-Date -Format "yyyy-MM-dd_HH-mm-ss").log"
 
 function GetAndParseResourceData {
     param (
         [IOHandle]$io_handle,
         [Hashtable]$resource_config,
         [Hashtable]$config,
-        [ApiAction[]]$actions
+        [ApiAction[]]$actions,
+        [Logger]$logger
     )
 
     # Get Raw Data
-    Write-Host "Loading data for $($resource_config.resource_name)s..."
+    $logger.section = "Load"
+    $logger.Info("Loading data for $($resource_config.resource_name)s...")
     [DataPacket[]]$intermediate_data = $io_handle.GetResourceData($resource_config)
     [Int]$num_data = $intermediate_data.Count
-    if ($num_data -eq 0) { Write-Host "No data found!"; return }
+    if ($num_data -eq 0) { $logger.Info("No data found!"); return }
 
     # Parse Data
     [Hashtable]$unique_check_map = @{}
     [DataPacket[]]$to_deploy = @()
-    Write-Host "Parsing data for $num_data resource$(PluralityIn $num_data)..."
+    $logger.section = "Parse"
+    $logger.Info("Parsing data for $num_data resource$(PluralityIn $num_data)...")
     for ($i = 0; $i -lt $num_data; $i++) {
         ShowPercentage $i $num_data
         [DataPacket]$data_packet = $intermediate_data[$i]
@@ -44,25 +50,28 @@ function GetAndParseResourceData {
             only_deletion = -not ([ApiAction]::Create -in $actions -or [ApiAction]::Update -in $actions)
             data_packet = $data_packet
             unique_check_map = $unique_check_map
+            logger = $logger
         }
         try { $to_deploy += ParseIntermediate @parse_intermediate_params }
         catch {
             [String]$err_message = $_.Exception.Message
             [String]$short_info = $err_message.Split([System.Environment]::NewLine)[0].Split(":")[0]
             [String]$message = Format-Error -Message "Parse error at $($data_packet.origin_info)" -Cause "$err_message"
-            [OutputValue]$val = [OutputValue]::New([LogLevel]::Error, $message, $short_info, $config.color.parse_error, $data_packet.row_index)
-            $Host.UI.WriteErrorLine($message)
+            [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.parse_error, $data_packet.row_index)
             $io_handle.UpdateOutput($resource_config, $val)
+            $logger.Error($message)
         }
     }
 
-    Write-Host "$($to_deploy.Count)/$num_data parsed successfully$(Punctuate $to_deploy.Count $num_data)"
+    $logger.Info("$($to_deploy.Count)/$num_data parsed successfully$(Punctuate $to_deploy.Count $num_data)")
     return $to_deploy
 }
 
-function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [String]$specific_action = "") {
-    Write-Host "Loading config from $conf_path..."
+function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [String]$specific_action = "", [Logger]$logger) {
+    $logger.section = "Setup"
+    $logger.Info("Loading config from '$conf_path'...")
     [Hashtable]$config = Get-Config $conf_path # might throw
+    $LOG_PATH = "$($config.log_directory)\$LOG_PATH"
     [Hashtable[][]]$resource_config_groups = @(
         @((Get-SecurityGroupsConfig $config), (Get-ServicesConfig $config)),
         @((Get-RulesConfig $config))
@@ -95,25 +104,25 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
         }
     }
 
-    Write-Host "Initialising communication with API..."
+    $logger.Info("Initialising communication with API...")
     # very dangerously disabling validating certification - sadly necessary
     [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
     [ApiHandle]$api_handle = [ApiHandle]::New($config); $api_handle.Init() # might throw
     [IOHandle]$io_handle = if ($inline_json) {
-        Write-Host "Loading JSON-data..."
+        $logger.Info("Loading JSON-data...")
         [JsonHandle]$json_handle = [JsonHandle]::New($inline_json, $config.nsx_image_path, $tenant) # might throw
-        foreach ($unused_resource in $json_handle.UnusedResources()) { $Host.UI.WriteWarningLine("Unused $unused_resource") }
+        foreach ($unused_resource in $json_handle.UnusedResources()) { $logger.Warn("Unused $unused_resource") }
         $json_handle
     } else {
-        Write-Host "Opening Excel-instance..."
+        $logger.Info("Opening Excel-instance...")
+        $logger.Debug("Attempting to open '$($config.excel.filepath)'")
         if (-not $tenant) { throw "Please provide a tenant name" }
         [ExcelHandle]$excel_handle = [ExcelHandle]::New($config.nsx_image_path, $tenant)
         [Bool]$opened = $false
         foreach ($_ in 1..$EXCEL_OPEN_ATTEMPTS) {
             try { $excel_handle.Open($config.excel.filepath); $opened = $true; break }
-            catch { $excel_handle.Release(); Write-Host "Failed. Trying again..."; Start-Sleep 1 }
-        }
-        if (-not $opened) { throw "Failed to open Excel-instance. :(" }
+            catch { $excel_handle.Release(); $logger.Info("Failed. Trying again..."); Start-Sleep 1 }
+        }; if (-not $opened) { throw "Failed to open Excel-instance. :(" }
         $excel_handle 
     }
 
@@ -122,9 +131,9 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
     $resources_info = Join ($resource_config_groups | ForEach-Object {
         Format-List ($_ | ForEach-Object { "$($_.resource_name)s" })
     }) ", then "
-    Write-Host "Ready!`n"
-    Write-Host "Resource Order: $resources_info"
-    Write-Host "Request-Plan:   $actions_info resources"
+    $logger.Info("Ready!")
+    $logger.Info("Resource Order: $resources_info")
+    $logger.Info("Request-Plan:   $actions_info resources")
 
     try {
         foreach ($resource_config_group in $resource_config_groups) {
@@ -139,13 +148,15 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
                     resource_config = $resource_config
                     config = $config
                     actions = $actions
+                    logger = $logger
                 }
                 try { $to_deploy += GetAndParseResourceData @get_and_parse_params }
-                catch { $Host.UI.WriteErrorLine($_.Exception.Message) }
+                catch { $logger.Error($_.Exception.Message) }
             }
 
             # Deploy parsed packets for the whole resource group
             PrintDivider
+            $logger.section = "Deploy"
             [DeployBucket[]]$deploy_buckets = @()
             if ($use_smart_actions) {
                 $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Create, [ApiAction]::Update))
@@ -167,19 +178,27 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
                 io_handle = $io_handle
                 api_handle = $api_handle
                 config = $config
+                logger = $logger
             }
 
             try { DeployAndAwaitBuckets @deploy_params }
-            catch { $Host.UI.WriteErrorLine($_.Exception.Message) }
+            catch { $logger.Error($_.Exception.Message) }
         }
     } finally {
         PrintDivider
-        Write-Host "Releasing IO-Handle..."
-        $io_handle.GetLog() | Set-Content -Path "$($config.log_directory)\ruledeployer_$(Get-Date -Format "yyyy-MM-dd_HH-mm-ss").log"
+        $logger.section = "Cleanup"
+        $logger.Info("Releasing IO-Handle...")
         $io_handle.Release()
+        $logger.Info("Saving Logs...")
+        $logger.GetLogs() -join "`n" | Set-Content -Path $LOG_PATH
     }
 }
 
-try { Main $ConfigPath $Tenant $InlineJson $Action }
-catch { $Host.UI.WriteErrorLine($_.Exception.Message); exit 1 }
+try { Main $ConfigPath $Tenant $InlineJson $Action $logger }
+catch {
+    $logger.Error($_.Exception.Message)
+    $logger.GetLogs() -join "`n" | Set-Content -Path $LOG_PATH
+    exit 1
+}
+
 Write-Host "Done!"
