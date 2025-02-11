@@ -12,6 +12,7 @@ param (
     [String]$Action,
     [String]$Tenant,
     [String]$InlineJson,
+    [String]$LogDir = "$PSScriptRoot\logs",
     [String]$ConfigPath = "$PSScriptRoot\config.json"
 )
 
@@ -20,7 +21,8 @@ param (
 
 [Int]$EXCEL_OPEN_ATTEMPTS = 3
 [Logger]$logger = [Logger]::New($Host.UI)
-[String]$LOG_PATH = "ruledeployer_$(Get-Date -Format "yyyy-MM-dd_HH-mm-ss").log"
+[String]$LogPath = "$LogDir\ruledeployer_$(Get-Date -Format "yyyy-MM-dd_HH-mm-ss").log"
+$logger.Debug("Log-Output set to '$LogPath'")
 
 function GetAndParseResourceData {
     param (
@@ -35,6 +37,7 @@ function GetAndParseResourceData {
     $logger.section = "Load"
     $logger.Info("Loading data for $($resource_config.resource_name)s...")
     [DataPacket[]]$intermediate_data = $io_handle.GetResourceData($resource_config)
+    foreach ($data_packet in $intermediate_data) { $logger.Debug("Found data at $($data_packet.origin_info)") }
     [Int]$num_data = $intermediate_data.Count
     if ($num_data -eq 0) { $logger.Info("No data found!"); return }
 
@@ -71,7 +74,6 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
     $logger.section = "Setup"
     $logger.Info("Loading config from '$conf_path'...")
     [Hashtable]$config = Get-Config $conf_path # might throw
-    $LOG_PATH = "$($config.log_directory)\$LOG_PATH"
     [Hashtable[][]]$resource_config_groups = @(
         @((Get-SecurityGroupsConfig $config), (Get-ServicesConfig $config)),
         @((Get-RulesConfig $config))
@@ -131,7 +133,7 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
     $resources_info = Join ($resource_config_groups | ForEach-Object {
         Format-List ($_ | ForEach-Object { "$($_.resource_name)s" })
     }) ", then "
-    $logger.Info("Ready!")
+    $logger.Info("Ready!`n")
     $logger.Info("Resource Order: $resources_info")
     $logger.Info("Request-Plan:   $actions_info resources")
 
@@ -190,14 +192,15 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
         $logger.Info("Releasing IO-Handle...")
         $io_handle.Release()
         $logger.Info("Saving Logs...")
-        $logger.GetLogs() -join "`n" | Set-Content -Path $LOG_PATH
+        $logger.Save($LogPath)
     }
 }
 
 try { Main $ConfigPath $Tenant $InlineJson $Action $logger }
 catch {
     $logger.Error($_.Exception.Message)
-    $logger.GetLogs() -join "`n" | Set-Content -Path $LOG_PATH
+    $logger.Info("Saving Logs...")
+    $logger.Save($LogPath)
     exit 1
 }
 
