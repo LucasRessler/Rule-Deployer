@@ -38,8 +38,7 @@ class ApiHandle {
             } | ConvertTo-Json
             $response = Invoke-RestMethod $this.url_refresh_token -Method Post -ContentType "application/json" -Body $body -TimeoutSec 5
             $this.refresh_token = $response.refresh_token
-        }
-        catch {
+        } catch {
             throw Format-Error -Message "Failed to obtain refresh token!" -Cause $_.Exception.Message -Hints @(
                 "Ensure that you're connected to the Admin-LAN"
                 "Ensure your username and password are valid"
@@ -66,7 +65,7 @@ class ApiHandle {
     }
 
     [String]TenantID ([String]$tenant) {
-        [String]$failed = "-1"
+        [String]$failed = "`0"
         [String]$cached = $this.tenant_map[$tenant]
         if ($cached -eq $failed) { throw "Tenant $tenant cannot be accessed" }
         elseif ($cached) { return $this.tenant_map[$tenant] }
