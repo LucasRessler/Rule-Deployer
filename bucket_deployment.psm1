@@ -79,7 +79,7 @@ function DeploySingleBucket {
         [String]$deployment_name = "$action $(Join @($resource_config.resource_name, $name) " ") - $date - LR Automation"
 
         try {
-            $logger.Debug("Deploying $action-request for $($data_packet.origin_info): '$deployment_name'")
+            $logger.Debug("Deploying $action-request for $($data_packet.origin_info) over tenant $($data_packet.tenant): '$deployment_name'")
             $data_packet.deployment_id = $api_handle.Deploy($deployment_name, $data_packet.tenant, $resource_config.catalog_id, $inputs)
             $bucket.deployed += $data_packet
         } catch {
@@ -129,7 +129,10 @@ function AwaitSingleBucket {
 
             [Hashtable]$image = $deployment.GetImageConversion()
             $io_handle.UpdateNsxImage($image, $action)
-        } else { $bucket.to_deploy += $deployment }
+        } else {
+            $logger.Debug("Deployment for resource at $($deployment.origin_info) finished with status Failed")
+            $bucket.to_deploy += $deployment
+        }
     }
 
     [Int]$num_successful = $num_deployed - $bucket.to_deploy.Count
