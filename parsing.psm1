@@ -157,5 +157,6 @@ function ParseIntermediate {
         $v = $data_packet.data[$k] 
         if ($v) { $logger.Warn("Unused value at $($data_packet.origin_info): {'$k': '$v'} will be ignored!") }
     }
+    $logger.Debug("Resource at $($data_packet.origin_info) parsed successfully")
     return $parsed_packet
 }
