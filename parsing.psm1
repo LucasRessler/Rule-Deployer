@@ -124,10 +124,8 @@ function ParseIntermediate {
                         "'$value' was already used"
                         "Ensure that each ${dbg_name} is unique"
                     )
-                }
-                else { $unique_check_map[$key][$value] = $true }
-            }
-            else { $unique_check_map[$key] = @{ $value = $true } }
+                } else { $unique_check_map[$key][$value] = $true }
+            } else { $unique_check_map[$key] = @{ $value = $true } }
         }
 
         $value = @($value) | ForEach-Object {
@@ -142,8 +140,7 @@ function ParseIntermediate {
                     $errors += Format-Error -Message "Invalid ${dbg_name}: '$sub_value'" -Cause $_.Exception.Message
                     continue
                 }
-            }
-            else { $_ }
+            } else { $_ }
         }
 
         if ($postparser) {
@@ -158,7 +155,7 @@ function ParseIntermediate {
     elseif ($errors.Count -eq 1) { throw $errors[0] }
     foreach ($k in $format.Keys) { $data_packet.data.Remove($k) }
     foreach ($k in $data_packet.data.Keys) {
-        $v = $data_packet.data[$k] 
+        if ($k.StartsWith("__")) { continue }; [String]$v = $data_packet.data[$k]
         if ($v) { $logger.Warn("Unused value at $($data_packet.origin_info): {'$k': '$v'} will be ignored!") }
     }
     $logger.Debug("Resource at $($data_packet.origin_info) parsed successfully")
