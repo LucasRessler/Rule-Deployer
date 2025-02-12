@@ -20,6 +20,8 @@ function SplitServicerequestsInExcelData ([DataPacket]$data_packet) {
     [String[]]$req = $data_packet.data.all_servicerequests
     if ($req.Count -gt 0) { $data_packet.data["servicerequest"] = $req[0] }
     if ($req.Count -gt 1) { $data_packet.data["updaterequests"] = $req[1..$req.Count] }
+    $data_packet.data["__origin__servicerequest"] = $data_packet.data["__origin__all_servicerequests"]
+    $data_packet.data.Remove("__origin__all_servicerequests")
     $data_packet.data.Remove("all_servicerequests")
     return $data_packet
 }
