@@ -130,7 +130,7 @@ class ExcelHandle : IOHandle {
                     $key = $resource_config.excel_format[$col - 1]
                     $cell_data = $sheet.Cells.Item($row, $col).Text.Split([System.Environment]::NewLine).Trim()
                     $is_empty = ($is_empty -and ($cell_data -eq ""))
-                    $data_packet.data["__origin__$key"] = "column $([Char]([Int][Char]'A' + $col - 1))"
+                    $data_packet.value_origins[$key] = "column $([Char]([Int][Char]'A' + $col - 1))"
                     $data_packet.data[$key] = $cell_data
                 }
 
