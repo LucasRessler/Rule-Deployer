@@ -33,6 +33,7 @@ function RulesDataFromExcelData ([DataPacket]$data_paket) {
     $data_packet = SplitServicerequestsInExcelData $data_packet
     return @($gateways | ForEach-Object {
         [DataPacket]$new_packet = [DataPacket]::New($data_packet, (DeepCopy $data_packet.data))
+        if ($gateways.Count -gt 1) { $new_packet.origin_info += " ($_)" }
         $new_packet.data["gateway"] = $_
         $new_packet
     })
