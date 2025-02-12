@@ -107,7 +107,7 @@ function ParseIntermediate {
             if (-not $optional) {
                 $hint = if ($generator) { "generated from other values" }
                 # Check if an origin string has been created for the value
-                elseif ($data_packet.data["__origin__$key"]) { "Ensure that $($data_packet.data["__origin__$key"]) is not empty" }
+                elseif ($data_packet.value_origins[$key]) { "Ensure that $($data_packet.value_origins[$key]) is not empty" }
                 # Otherwise, use the fieldname
                 else { "Ensure that field '$key' is not empty" } 
                 $errors += Format-Error -Message "Missing $dbg_name" -Hints @($hint)
@@ -155,7 +155,7 @@ function ParseIntermediate {
     elseif ($errors.Count -eq 1) { throw $errors[0] }
     foreach ($k in $format.Keys) { $data_packet.data.Remove($k) }
     foreach ($k in $data_packet.data.Keys) {
-        if ($k.StartsWith("__")) { continue }; [String]$v = $data_packet.data[$k]
+        [String]$v = $data_packet.data[$k]
         if ($v) { $logger.Warn("Unused value at $($data_packet.origin_info): {'$k': '$v'} will be ignored!") }
     }
     $logger.Debug("Resource at $($data_packet.origin_info) parsed successfully")
