@@ -65,7 +65,7 @@ class ApiHandle {
     }
 
     [String]TenantID ([String]$tenant) {
-        [String]$failed = "`0"
+        [String]$failed = "--"
         [String]$cached = $this.tenant_map[$tenant]
         if ($cached -eq $failed) { throw "Tenant $tenant cannot be accessed" }
         elseif ($cached) { return $this.tenant_map[$tenant] }
