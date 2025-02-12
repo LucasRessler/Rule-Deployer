@@ -20,9 +20,6 @@ param (
 . "$PSScriptRoot\resource_configs.ps1"
 
 [Int]$EXCEL_OPEN_ATTEMPTS = 3
-[Logger]$logger = [Logger]::New($Host.UI)
-[String]$LogPath = "$LogDir\ruledeployer_$(Get-Date -Format "yyyy-MM-dd_HH-mm-ss").log"
-$logger.Debug("Log-Output set to '$LogPath'")
 
 function GetAndParseResourceData {
     param (
@@ -70,7 +67,15 @@ function GetAndParseResourceData {
     return $to_deploy
 }
 
-function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [String]$specific_action = "", [Logger]$logger) {
+function Main {
+    param (
+        [String]$conf_path,
+        [String]$tenant,
+        [String]$inline_json,
+        [String]$specific_action,
+        [Logger]$logger
+    )
+
     $logger.section = "Setup"
     $logger.Info("Loading config from '$conf_path'...")
     [Hashtable]$config = Get-Config $conf_path # might throw
@@ -110,21 +115,27 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
     # very dangerously disabling validating certification - sadly necessary
     [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
     [ApiHandle]$api_handle = [ApiHandle]::New($config); $api_handle.Init() # might throw
+
+    $logger.Info("Initialising IO-Handle...")
     [IOHandle]$io_handle = if ($inline_json) {
         $logger.Info("Loading JSON-data...")
         [JsonHandle]$json_handle = [JsonHandle]::New($inline_json, $config.nsx_image_path, $tenant) # might throw
         foreach ($unused_resource in $json_handle.UnusedResources()) { $logger.Warn("Unused $unused_resource") }
         $json_handle
     } else {
+        if (-not $tenant) { throw "Please provide a tenant name when using Excel-input" }
         $logger.Info("Opening Excel-instance...")
         $logger.Debug("Attempting to open '$($config.excel.filepath)'")
-        if (-not $tenant) { throw "Please provide a tenant name" }
         [ExcelHandle]$excel_handle = [ExcelHandle]::New($config.nsx_image_path, $tenant)
-        [Bool]$opened = $false
-        foreach ($_ in 1..$EXCEL_OPEN_ATTEMPTS) {
+        [Bool]$opened = $false; [String]$cause = $null
+        foreach ($i in 1..$EXCEL_OPEN_ATTEMPTS) {
             try { $excel_handle.Open($config.excel.filepath); $opened = $true; break }
-            catch { $excel_handle.Release(); $logger.Info("Failed. Trying again..."); Start-Sleep 1 }
-        }; if (-not $opened) { throw "Failed to open Excel-instance. :(" }
+            catch [System.Runtime.InteropServices.COMException] {
+                $excel_handle.Release()
+                if ($i -lt $EXCEL_OPEN_ATTEMPTS) { $logger.Info("Failed. Trying again..."); Start-Sleep 1 }
+            } catch { $cause = $_.Exception.Message; break }
+        }
+        if (-not $opened) { throw Format-Error -Message "Failed to open Excel-instance. :(" -Cause $cause }
         $excel_handle 
     }
 
@@ -136,6 +147,7 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
     $logger.Info("Ready!`n")
     $logger.Info("Resource Order: $resources_info")
     $logger.Info("Request-Plan:   $actions_info resources")
+    [Bool]$in_progress = $true
 
     try {
         foreach ($resource_config_group in $resource_config_groups) {
@@ -158,7 +170,6 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
 
             # Deploy parsed packets for the whole resource group
             PrintDivider
-            $logger.section = "Deploy"
             [DeployBucket[]]$deploy_buckets = @()
             if ($use_smart_actions) {
                 $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Create, [ApiAction]::Update))
@@ -185,23 +196,32 @@ function Main ([String]$conf_path, [String]$tenant, [String]$inline_json, [Strin
 
             try { DeployAndAwaitBuckets @deploy_params }
             catch { $logger.Error($_.Exception.Message) }
-        }
+        }; $in_progress = $false
     } finally {
-        PrintDivider
-        $logger.section = "Cleanup"
-        $logger.Info("Releasing IO-Handle...")
-        $io_handle.Release()
-        $logger.Info("Saving Logs...")
-        $logger.Save($LogPath)
+        $logger.section = "Cleanup"; PrintDivider
+        if ($in_progress) { $logger.Info("Excecution interrupted prematurely!") }
+        $logger.Info("Releasing IO-Handle..."); $io_handle.Release()
+        $logger.Info("Saving Logs..."); $logger.Save($LogPath)
     }
 }
 
-try { Main $ConfigPath $Tenant $InlineJson $Action $logger }
+[Logger]$logger = [Logger]::New($Host.UI)
+[String]$LogPath = "$LogDir\ruledeployer_$(Get-Date -Format "yyyy-MM-dd_HH-mm-ss").log"
+$logger.Debug("I was invoked with '$($MyInvocation.Line)'")
+$logger.Debug("Log-Output has been set to '$LogPath'")
+
+[Hashtable]$main_params = @{
+    conf_path = $ConfigPath 
+    tenant = $Tenant 
+    inline_json = $InlineJson 
+    specific_action = $Action 
+    logger = $logger
+}
+
+try { Main @main_params }
 catch {
     $logger.Error($_.Exception.Message)
-    $logger.Info("Saving Logs...")
-    $logger.Save($LogPath)
-    exit 1
+    $logger.Save($LogPath); exit 1
 }
 
 Write-Host "Done!"
