@@ -20,15 +20,15 @@ function DiagnoseFailure {
     if ($resource_id -eq [ResourceId]::Rule) {
         foreach ($used_service in $failed_packet.data["services"]) {
             [String[]]$service_keys = @($tenant, "services", $used_service)
-            if ($null -eq $io_handle.GetImage($service_keys)) { $depends_not_found += $used_service }
+            if ($null -eq $io_handle.GetImage($service_keys)) { $depends_not_found += "$used_service (Service)" }
         }
         foreach ($used_source in $failed_packet.data["sources"]) {
             [String[]]$source_keys = @($tenant, "security_groups", $used_source)
-            if ($null -eq $io_handle.GetImage($source_keys)) { $depends_not_found += $used_source }
+            if ($null -eq $io_handle.GetImage($source_keys)) { $depends_not_found += "$used_source (Source Security Group)" }
         }
         foreach ($used_destination in $failed_packet.data["destinations"]) {
             [String[]]$desitnation_keys = @($tenant, "security_groups", $used_destination)
-            if ($null -eq $io_handle.GetImage($desitnation_keys)) { $depends_not_found += $used_destination }
+            if ($null -eq $io_handle.GetImage($desitnation_keys)) { $depends_not_found += "$used_destination (Destination Security Group)" }
         }
     }
 
