@@ -18,6 +18,7 @@ class DataPacket {
     [Int]$row_index
 
     [String]$deployment_id = $null
+    [Hashtable]$value_origins = @{}
     [Hashtable]$api_conversions = @{}
     [Hashtable]$img_conversion = $null
 
