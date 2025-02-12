@@ -105,8 +105,12 @@ function ParseIntermediate {
             [Bool]$optional_for_delete = -not $format[$key]["required_for_delete"] 
             [Bool]$optional = $format[$key]["is_optional"] -or ($only_deletion -and $optional_for_delete)
             if (-not $optional) {
-                $info = if ($generator) { "generated from other values" } else { "field '$key'" } 
-                $errors += "Missing $dbg_name ($info)"
+                $hint = if ($generator) { "generated from other values" }
+                # Check if an origin string has been created for the value
+                elseif ($data_packet.data["__origin__$key"]) { "Ensure that $($data_packet.data["__origin__$key"]) is not empty" }
+                # Otherwise, use the fieldname
+                else { "Ensure that field '$key' is not empty" } 
+                $errors += Format-Error -Message "Missing $dbg_name" -Hints @($hint)
             }
             continue
         }
