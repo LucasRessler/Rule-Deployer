@@ -161,6 +161,7 @@ function DeployAndAwaitBuckets {
         [Int]$n = $_.to_deploy.Count
         if ($n -gt 0) { "$n $($_.GetCurrentAction())-request$(PluralityIn $n)" }
     }); if (-not $deployments_str) { $deployments_str = "--" }
+    $logger.section = "Deploy"
     $logger.Info("Queued deployments: $deployments_str")
 
     while (($deploy_buckets | ForEach-Object { $_.QueuedActions() } | Measure-Object -Sum).Sum -gt 0) {
