@@ -1,2 +1,3 @@
-./config.json
-./nsx_image.json
+config.json
+nsx_image.json
+logs
