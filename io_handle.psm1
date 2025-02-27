@@ -5,13 +5,11 @@ using module ".\utils.psm1"
 class OutputValue {
     [String]$short_info
     [String]$message
-    [String]$excel_color
     [Int]$excel_index
 
-    OutputValue ([String]$message, [String]$short_info, [String]$excel_color, [Int]$excel_index) {
+    OutputValue ([String]$message, [String]$short_info, [Int]$excel_index) {
         $this.message = $message
         $this.short_info = $short_info
-        $this.excel_color = $excel_color
         $this.excel_index = $excel_index
     }
 }
@@ -73,64 +71,52 @@ class IOHandle {
 }
 
 class ExcelHandle : IOHandle {
-    [__ComObject]$app
-    [__ComObject]$workbook
-    [Bool]$should_close
     [String]$tenant
+    [String]$file_path
+    [Hashtable]$sheets = @{}
     
-    ExcelHandle ([String]$nsx_image_path, [String]$tenant) : base ($nsx_image_path) {
+    ExcelHandle ([String]$nsx_image_path, [String]$file_path, [String]$tenant) : base ($nsx_image_path) {
+        if ($null -eq (Get-Module ImportExcel)) { Import-Module ImportExcel -ErrorAction Stop }
+        if (-not (Test-Path "$file_path")) { throw "'$file_path' was not found :(" }
+        $ext = [System.IO.Path]::GetExtension($file_path)
+        if ($ext -notmatch '.xlsx$|.xlsm$') { throw "Extension type '$ext' is not supported :(" }
+        $this.file_path = $file_path
         $this.tenant = $tenant
     }
 
-    [Void] Open([String]$file_path) {
-        try {
-            Add-Type -AssemblyName System.Web
-            $this.app = [Runtime.Interopservices.Marshal]::GetActiveObject('Excel.Application')
-            $sanitised_file_path = if (-not $file_path.StartsWith("https://")) { $file_path }
-            else { UrlDecode($file_path.Split("?")[0]) }
-            foreach ($wb in $this.app.Workbooks) {
-                if ($wb.FullName -eq $sanitised_file_path) {
-                    $this.workbook = $wb
-                    break
-                }
-            }
-            if (-not $this.workbook) { throw }
-            $this.should_close = $false
-            Write-Host "Attached to and hid running Excel-Instance."
-        } catch {
-            try {
-                $this.app = New-Object -ComObject Excel.Application
-                $this.workbook = $this.app.Workbooks.Open($file_path)
-                $this.should_close = $true
-                Write-Host "Created new Excel-Instance."
-            } catch {
-                $this.Release()
-                throw $_.Exception.Message
+    [PSCustomObject] GetSheet ([String]$sheet_name) {
+        if ($null -eq $this.sheets[$sheet_name]) {
+            try { [PsCustomObject[]]$sheet_contents = Import-Excel -Path $this.file_path -WorksheetName $sheet_name }
+            catch { throw Format-Error -Message "Sheet '$sheet_name' could not be opened" -Cause $_.Exception.Message }
+            if ($sheet_contents.Count -eq 0) { return $null }
+            $this.sheets[$sheet_name] = [PSCustomObject]@{
+                native_keys = $sheet_contents[0].PSObject.Properties.Name
+                contents = $sheet_contents | ConvertTo-Hashtable
             }
         }
-        $this.app.Visible = $false
+        return $this.sheets[$sheet_name]
     }
 
     [DataPacket[]] GetResourceData ([Hashtable]$resource_config) {
         [String]$sheet_name = $resource_config.excel_sheet_name
-        [Int]$output_column = $resource_config.excel_format.Length + 1
-        try { $sheet = $this.workbook.Worksheets.Item($sheet_name) }
-        catch { throw Format-Error -Message "Sheet '$sheet_name' could not be opened" -Cause $_.Exception.Message }
-
-        $num_rows = $sheet.UsedRange.Rows.Count
-        $data_packets = @()
-
-        for ($row = 1; $row -le $num_rows; $row++) {
+        [PSCustomObject]$sheet = $this.GetSheet($sheet_name)
+        if ($null -eq $sheet) { return @() }
+        [Hashtable[]]$sheet_contents = $sheet.contents
+        [String[]]$sheet_native_keys = $sheet.native_keys
+        [String]$output_key = $sheet_native_keys[$resource_config.excel_format.Count]
+        [DataPacket[]]$data_packets = @()
+        for ($row = 0; $row -lt $sheet_contents.Count; $row++) {
             # Only include data if the output-cell is empty
-            if (-not $sheet.Cells.Item($row, $output_column).Text) {
-                [String]$origin_info = "row $row in $sheet_name"
+            if (-not $sheet_contents[$row].$output_key) {
+                [String]$origin_info = "row $($row + 2) in $sheet_name"
                 [DataPacket]$data_packet = [DataPacket]::New(@{}, $resource_config, $this.tenant, $origin_info, $row)
-                $is_empty = $true
-                for ($col = 1; $col -lt $output_column; $col++) {
-                    $key = $resource_config.excel_format[$col - 1]
-                    $cell_data = $sheet.Cells.Item($row, $col).Text.Split([System.Environment]::NewLine).Trim()
-                    $is_empty = ($is_empty -and ($cell_data -eq ""))
-                    $data_packet.value_origins[$key] = "column $([Char]([Int][Char]'A' + $col - 1))"
+                [Bool]$is_empty = $true
+                for ($col = 0; $col -lt $resource_config.excel_format.Count; $col++) {
+                    $key = $resource_config.excel_format[$col]
+                    $cell_data = [String]$sheet_contents[$row]."$($sheet_native_keys[$col])"
+                    if ($cell_data) { $cell_data = $cell_data.Split([System.Environment]::NewLine).Trim() }
+                    $is_empty = ($is_empty -and (-not $cell_data))
+                    $data_packet.value_origins[$key] = "column $([Char]([Int][Char]'A' + $col))"
                     $data_packet.data[$key] = $cell_data
                 }
 
@@ -142,38 +128,27 @@ class ExcelHandle : IOHandle {
     }
 
     [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {
-        [Int]$output_column = $resource_config.excel_format.Length + 1
+        [Int]$index = $value.excel_index
         [String]$sheet_name = $resource_config.excel_sheet_name
-        [String]$col = $value.excel_color
+        [PSCustomObject]$sheet = $this.GetSheet($sheet_name)
+        [Hashtable]$row_contents = $sheet.contents[$index]
+        [String]$output_key = $sheet.native_keys[$resource_config.excel_format.Count]
         if (-not $value.short_info) { return }
-        try { $sheet = $this.workbook.Worksheets.Item($sheet_name) }
-        catch { throw Format-Error -Message "Sheet '$sheet_name' could not be opened" -Cause $_.Exception.Message }
-        $cell = $sheet.Cells.Item($value.excel_index, $output_column)
-        if ($cell.Text -ne $value.short_info) {
-            $cell.Value = Join @($cell.Text, $value.short_info) ", "
-            if ($col) { $cell.Font.Color = $col }
+        if ($row_contents[$output_key] -ne $value.short_info) {
+            $row_contents[$output_key] = Join @($row_contents[$output_key], $value.short_info) ", "
         }
     }
     
     [Void] Release () {
         $this.SaveNsxImage()
-        if ($this.app) { $this.app.Visible = $this.initially_visible }
-        if ($this.should_close) {
-            if ($this.workbook) { $this.workbook.Close($true) }
-            if ($this.app) { $this.app.Quit() }
+        foreach ($sheet_name in $this.sheets.Keys) {
+            $this.sheets[$sheet_name].contents | ForEach-Object {
+                [PSCustomObject]$row_contents = [PSCustomObject]@{}
+                foreach ($key in $this.sheets[$sheet_name].native_keys) {
+                    $row_contents | Add-Member -MemberType NoteProperty -Name $key -Value $_[$key]
+                }; $row_contents
+            } | Export-Excel -Path $this.file_path -WorksheetName $sheet_name
         }
-        elseif ($this.app) { $this.app.Visible = $true }
-        if ($this.workbook) {
-            [System.Runtime.InteropServices.Marshal]::ReleaseComObject($this.workbook)
-            $this.workbook = $null
-        }
-        if ($this.app) {
-            [System.Runtime.InteropServices.Marshal]::ReleaseComObject($this.app)
-            $this.app = $null
-        }
-        $this.Finalize()
-        [System.GC]::Collect()
-        [System.GC]::WaitForPendingFinalizers()
     }
 }
 

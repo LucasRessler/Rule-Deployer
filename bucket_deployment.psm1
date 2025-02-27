@@ -53,7 +53,6 @@ function DeploySingleBucket {
         [DeployBucket]$bucket,
         [ApiHandle]$api_handle,
         [IoHandle]$io_handle,
-        [Hashtable]$config,
         [Logger]$logger
     )
 
@@ -85,7 +84,7 @@ function DeploySingleBucket {
         } catch {
             [String]$short_info = "Deployment Failed"
             [String]$message = "Deploy error at $($data_packet.origin_info): $($_.Exception.Message)"
-            [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $data_packet.row_index)
+            [OutputValue]$val = [OutputValue]::New($message, $short_info, $data_packet.row_index)
             $io_handle.UpdateOutput($resource_config, $val)
             $logger.Error($message)
         }
@@ -103,7 +102,6 @@ function AwaitSingleBucket {
         [DeployBucket]$bucket,
         [ApiHandle]$api_handle,
         [IoHandle]$io_handle,
-        [Hashtable]$config,
         [Logger]$logger
     )
 
@@ -123,7 +121,7 @@ function AwaitSingleBucket {
         if ($status -eq [DeploymentStatus]::Successful) {
             [String]$short_info = "$action Successful"
             [String]$message = "Resource at $($deployment.origin_info) was ${action_verb}d successfully"
-            [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.success, $deployment.row_index)
+            [OutputValue]$val = [OutputValue]::New($message, $short_info, $deployment.row_index)
             $io_handle.UpdateOutput($resource_config, $val)
             $logger.Debug($message)
 
@@ -145,14 +143,12 @@ function DeployAndAwaitBuckets {
         [DeployBucket[]]$deploy_buckets,
         [ApiHandle]$api_handle,
         [IoHandle]$io_handle,
-        [Hashtable]$config,
         [Logger]$logger
     )
 
     [Hashtable]$shared_params = @{
         api_handle = $api_handle
         io_handle = $io_handle
-        config = $config
         logger = $logger
     }
 
@@ -186,7 +182,7 @@ function DeployAndAwaitBuckets {
             [String]$short_info = "$actions_str Failed"
             [String]$message = Format-Error -Message "$requests_str for resource at $($failed_packet.origin_info) failed" `
                 -Hints (DiagnoseFailure $io_handle $failed_packet $bucket.actions)
-            [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.dploy_error, $failed_packet.row_index)
+            [OutputValue]$val = [OutputValue]::New($message, $short_info, $failed_packet.row_index)
             $io_handle.UpdateOutput($failed_packet.resource_config, $val)
             $logger.Error($message)
         }
