@@ -19,8 +19,6 @@ param (
 . "$PSScriptRoot\get_config.ps1"
 . "$PSScriptRoot\resource_configs.ps1"
 
-[Int]$EXCEL_OPEN_ATTEMPTS = 3
-
 function GetAndParseResourceData {
     param (
         [IOHandle]$io_handle,
@@ -126,17 +124,7 @@ function Main {
         if (-not $tenant) { throw "Please provide a tenant name when using Excel-input" }
         $logger.Info("Opening Excel-instance...")
         $logger.Debug("Attempting to open '$($config.excel.filepath)'")
-        [ExcelHandle]$excel_handle = [ExcelHandle]::New($config.nsx_image_path, $tenant)
-        [Bool]$opened = $false; [String]$cause = $null
-        foreach ($i in 1..$EXCEL_OPEN_ATTEMPTS) {
-            try { $excel_handle.Open($config.excel.filepath); $opened = $true; break }
-            catch [System.Runtime.InteropServices.COMException] {
-                $excel_handle.Release()
-                if ($i -lt $EXCEL_OPEN_ATTEMPTS) { $logger.Info("Failed. Trying again..."); Start-Sleep 1 }
-            } catch { $cause = $_.Exception.Message; break }
-        }
-        if (-not $opened) { throw Format-Error -Message "Failed to open Excel-instance. :(" -Cause $cause }
-        $excel_handle 
+        [ExcelHandle]::New($config.nsx_image_path, $config.excel.filepath, $tenant)
     }
 
     # Display Request Plan
