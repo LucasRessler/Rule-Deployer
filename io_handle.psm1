@@ -5,13 +5,11 @@ using module ".\utils.psm1"
 class OutputValue {
     [String]$short_info
     [String]$message
-    [String]$excel_color
     [Int]$excel_index
 
-    OutputValue ([String]$message, [String]$short_info, [String]$excel_color, [Int]$excel_index) {
+    OutputValue ([String]$message, [String]$short_info, [Int]$excel_index) {
         $this.message = $message
         $this.short_info = $short_info
-        $this.excel_color = $excel_color
         $this.excel_index = $excel_index
     }
 }

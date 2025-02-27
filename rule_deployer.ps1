@@ -55,7 +55,7 @@ function GetAndParseResourceData {
             [String]$err_message = $_.Exception.Message
             [String]$short_info = $err_message.Split([System.Environment]::NewLine)[0].Split(":")[0]
             [String]$message = Format-Error -Message "Parse error at $($data_packet.origin_info)" -Cause "$err_message"
-            [OutputValue]$val = [OutputValue]::New($message, $short_info, $config.color.parse_error, $data_packet.row_index)
+            [OutputValue]$val = [OutputValue]::New($message, $short_info, $data_packet.row_index)
             $io_handle.UpdateOutput($resource_config, $val)
             $logger.Error($message)
         }
@@ -122,7 +122,7 @@ function Main {
         $json_handle
     } else {
         if (-not $tenant) { throw "Please provide a tenant name when using Excel-input" }
-        $logger.Info("Opening Excel-instance...")
+        $logger.Info("Using Excel-Handle...")
         $logger.Debug("Attempting to open '$($config.excel.filepath)'")
         [ExcelHandle]::New($config.nsx_image_path, $config.excel.filepath, $tenant)
     }
@@ -178,7 +178,6 @@ function Main {
                 deploy_buckets = $deploy_buckets
                 io_handle = $io_handle
                 api_handle = $api_handle
-                config = $config
                 logger = $logger
             }
 
@@ -211,5 +210,4 @@ catch {
     $logger.Error($_.Exception.Message)
     $logger.Save($LogPath); exit 1
 }
-
 Write-Host "Done!"
