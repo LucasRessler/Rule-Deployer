@@ -89,9 +89,11 @@ class ExcelHandle : IOHandle {
             try { [PsCustomObject[]]$sheet_contents = Import-Excel -Path $this.file_path -WorksheetName $sheet_name }
             catch { throw Format-Error -Message "Sheet '$sheet_name' could not be opened" -Cause $_.Exception.Message }
             if ($sheet_contents.Count -eq 0) { return $null }
+            [Int]$len = $sheet_contents.Count
+            while (-not ([String]$sheet_contents[$len - 1].PSObject.Properties.Value).Trim()) { $len-- }
             $this.sheets[$sheet_name] = [PSCustomObject]@{
                 native_keys = $sheet_contents[0].PSObject.Properties.Name
-                contents = $sheet_contents | ConvertTo-Hashtable
+                contents = $sheet_contents[0..$len] | ConvertTo-Hashtable
             }
         }
         return $this.sheets[$sheet_name]
