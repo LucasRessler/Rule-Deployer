@@ -23,22 +23,23 @@ class DataPacket {
     [Hashtable]$img_conversion = $null
 
     DataPacket ([DataPacket]$source, [Hashtable]$data) {
-        $this.Init($data, $source.resource_config, $source.tenant, $source.origin_info, $source.row_index)
+        $this.Init($data, $source.resource_config, $source.value_origins, $source.tenant, $source.origin_info, $source.row_index)
     }
 
     DataPacket ([Hashtable]$data, [Hashtable]$resource_config, [String]$tenant, [String]$origin_info) {
-        $this.Init($data, $resource_config, $tenant, $origin_info, 0)
+        $this.Init($data, $resource_config, @{}, $tenant, $origin_info, 0)
     }
 
     DataPacket ([Hashtable]$data, [Hashtable]$resource_config, [String]$tenant, [String]$origin_info, [Int]$row_index) {
-        $this.Init($data, $resource_config, $tenant, $origin_info, $row_index)
+        $this.Init($data, $resource_config, @{}, $tenant, $origin_info, $row_index)
     }
 
-    [Void] Init ([Hashtable]$data, [Hashtable]$resource_config, [String]$tenant, [String]$origin_info, [Int]$row_index) {
+    [Void] Init ([Hashtable]$data, [Hashtable]$resource_config, [Hashtable]$value_origins, [String]$tenant, [String]$origin_info, [Int]$row_index) {
         $this.data = $data
         $this.tenant = $tenant
         $this.row_index = $row_index
         $this.origin_info = $origin_info
+        $this.value_origins = $value_origins
         $this.resource_config = $resource_config
     }
 
