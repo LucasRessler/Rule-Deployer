@@ -13,8 +13,8 @@ function Format-List ([Object[]]$arr) {
 
 function Format-Error {
     param ([String]$message, [String]$cause, [String[]]$hints)
-    if ($cause) { $message += "`n  Caused by: " + (Join $cause.Split([Environment]::NewLine) "`n  ")}
-    foreach ($hint in $hints) { $message += "`n  ->> " + (Join $hint.Split([System.Environment]::NewLine) "`n    ") }
+    if ($cause) { $message += "`r`n  Caused by: " + (Join $cause.Split([Environment]::NewLine) "`r`n  ")}
+    foreach ($hint in $hints) { $message += "`r`n  ->> " + (Join $hint.Split([System.Environment]::NewLine) "`r`n    ") }
     return $message
 }
 
@@ -145,9 +145,9 @@ function CustomConvertToJson {
             $out += "["; $comma = $false
             foreach ($sub in $obj) {
                 if ($comma) { $out += ","} else { $comma = $true }
-                $out += "`n" + (CustomConvertToJson $sub ($ilv + 1) $ind)
+                $out += "`r`n" + (CustomConvertToJson $sub ($ilv + 1) $ind)
             }
-            return "$out$(if ($comma) { "`n" + $ind * $ilv })]"
+            return "$out$(if ($comma) { "`r`n" + $ind * $ilv })]"
         }
 
         ($obj -is [Hashtable]) {
@@ -156,9 +156,9 @@ function CustomConvertToJson {
             $out += "{"; $comma = $false
             foreach ($key in $keys) {
                 if ($comma) { $out += ","} else { $comma = $true }
-                $out += "`n" + (CustomConvertToJson -key $key -obj $obj[$key] -ilv ($ilv + 1) -ind $ind)
+                $out += "`r`n" + (CustomConvertToJson -key $key -obj $obj[$key] -ilv ($ilv + 1) -ind $ind)
             }
-            return "${out}$(if ($comma) { "`n" + $ind * $ilv })}"
+            return "${out}$(if ($comma) { "`r`n" + $ind * $ilv })}"
         }
 
         ($null -eq $obj) { return "${out}[]"}
