@@ -116,7 +116,7 @@ function ParseIntermediate {
         }
 
         $value = $value.Trim()
-        if (-not $is_array) { $value = $value -join "`n" }
+        if (-not $is_array) { $value = $value -join "`r`n" }
         if ($format[$key]["is_unique"] -and $unique_check_map) {
             if ($unique_check_map[$key]) {
                 if ($unique_check_map[$key][$value]) {
