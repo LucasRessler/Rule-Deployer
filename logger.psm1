@@ -51,17 +51,17 @@ class Logger {
             [String]$date_str = $log.date.ToString("yyyy-MM-dd HH:mm:ss.ff")
             [String]$level_str = "$($log.level)".ToUpper(); $level_str += " " * (5 - $level_str.Length)
             [String]$section_str = if ($log.section) { " [ $($log.section) ] " }
-            @($log.message.Split([Environment]::NewLine) | ForEach-Object {
+            @($log.message.Split([Environment]::NewLine) | Where-Object { $_.Trim() } | ForEach-Object {
                 [String]$line = "$date_str  $level_str $section_str $_"
                 $date_str = "    ^           ^     "    
                 $level_str = "  ^  "
                 $section_str = if ($section_str) { " " * [Math]::Floor($section_str.Length / 2) + "^" + " " * [Math]::Ceiling($section_str.Length / 2 - 1) }
                 $line
-            }) -join "`n"
+            }) -join "`r`n"
         }
     }
 
     [Void] Save ([String]$path) {
-        $this.GetLogs() -join "`n" | Set-Content -Path $path
+        $this.GetLogs() -join "`r`n" | Set-Content -Path $path
     }
 }
