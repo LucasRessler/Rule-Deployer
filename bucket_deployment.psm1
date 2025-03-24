@@ -102,6 +102,7 @@ function AwaitSingleBucket {
         [DeployBucket]$bucket,
         [ApiHandle]$api_handle,
         [IoHandle]$io_handle,
+        [Hashtable]$summary,
         [Logger]$logger
     )
 
@@ -124,7 +125,8 @@ function AwaitSingleBucket {
             [OutputValue]$val = [OutputValue]::New($message, $short_info, $deployment.row_index)
             $io_handle.UpdateOutput($resource_config, $val)
             $logger.Debug($message)
-
+            if ($summary[$resource_config.resource_name]["successful"]) { $summary[$resource_config.resource_name]["successful"]++ }
+            else { $summary[$resource_config.resource_name]["successful"] = 1 }
             [Hashtable]$image = $deployment.GetImageConversion()
             $io_handle.UpdateNsxImage($image, $action)
         } else {
@@ -143,13 +145,14 @@ function DeployAndAwaitBuckets {
         [DeployBucket[]]$deploy_buckets,
         [ApiHandle]$api_handle,
         [IoHandle]$io_handle,
+        [Hashtable]$summary,
         [Logger]$logger
     )
 
     [Hashtable]$shared_params = @{
         api_handle = $api_handle
-        io_handle = $io_handle
-        logger = $logger
+        io_handle  = $io_handle
+        logger     = $logger
     }
 
     function NothingMoreToDo { $logger.Info("Nothing more to do.") }
@@ -169,7 +172,7 @@ function DeployAndAwaitBuckets {
 
         $logger.section = "Await"
         if (($deploy_buckets | ForEach-Object {
-            AwaitSingleBucket -bucket $_ @shared_params
+            AwaitSingleBucket -bucket $_ -summary $summary @shared_params
         } | Measure-Object -Sum).Sum -eq 0) { NothingMoreToDo; return }
 
         $deploy_buckets | ForEach-Object { $_.NextAction() }

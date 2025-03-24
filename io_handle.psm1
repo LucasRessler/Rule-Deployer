@@ -93,7 +93,7 @@ class ExcelHandle : IOHandle {
             while (-not ([String]$sheet_contents[$len - 1].PSObject.Properties.Value).Trim()) { $len-- }
             $this.sheets[$sheet_name] = [PSCustomObject]@{
                 native_keys = $sheet_contents[0].PSObject.Properties.Name
-                contents = $sheet_contents[0..$len] | ConvertTo-Hashtable
+                contents = [Hashtable[]]($sheet_contents[0..$len] | ConvertTo-Hashtable)
             }
         }
         return $this.sheets[$sheet_name]
@@ -144,14 +144,15 @@ class ExcelHandle : IOHandle {
     [Void] Release () {
         $this.SaveNsxImage()
         foreach ($sheet_name in $this.sheets.Keys) {
-            [Int]$last_row = $this.sheets[$sheet_name].contents.Count
-            [Int]$output_col = $this.sheets[$sheet_name].native_keys.Count
+            [PSCustomObject]$sheet = $this.GetSheet($sheet_name)
+            [Int]$last_row = $sheet.contents.Count + 1
+            [Int]$output_col = $sheet.native_keys.Count
             [String]$output_col_str = [Char]([Int][Char]"A" + $output_col - 1)
             [String]$format_range = "${output_col_str}2:${output_col_str}${last_row}"
-            [String]$output_key = $this.sheets[$sheet_name].native_keys[$output_col - 1]
-            $this.sheets[$sheet_name].contents | ForEach-Object {
+            [String]$output_key = $sheet.native_keys[$output_col - 1]
+            @($sheet.contents | ForEach-Object {
                 [PSCustomObject]@{ $output_key = $_[$output_key] }
-            } | Export-Excel -Path $this.file_path -WorksheetName $sheet_name -StartColumn $output_col -ConditionalText @(
+            }) | Export-Excel -Path $this.file_path -WorksheetName $sheet_name -StartColumn $output_col -ConditionalText @(
                 New-ConditionalText -ConditionalType ContainsText "Successful" -BackgroundColor "LightGreen" -ConditionalTextColor "Green" -Range $format_range
                 New-ConditionalText -ConditionalType NotContainsText "Successful" -BackgroundColor "Pink" -ConditionalTextColor "Red" -Range $format_range
             )

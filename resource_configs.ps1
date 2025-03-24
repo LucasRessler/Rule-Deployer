@@ -49,7 +49,7 @@ function Get-SecurityGroupsConfig ([Hashtable]$config) {
         json_nesting = @("name")
         resource_name = "Security Group"
         field_name = "security_groups"
-        excel_sheet_name = $config.excel.sheetnames.security_groups
+        excel_sheet_name = $config.excel_sheetnames.security_groups
         catalog_id = $config.api.catalog_ids.security_groups
         ddos_sleep_time = 1.0
     }
@@ -98,7 +98,7 @@ function Get-ServicesConfig ([Hashtable]$config) {
         resource_name = "Service"
         field_name = "services"
         catalog_id = $config.api.catalog_ids.services
-        excel_sheet_name = $config.excel.sheetnames.services
+        excel_sheet_name = $config.excel_sheetnames.services
         ddos_sleep_time = 1.0
     }
 }
@@ -198,14 +198,13 @@ function Get-RulesConfig ([Hashtable]$config) {
             "services"
             "comment"
             "all_servicerequests"
-            "customer_fw"
             "t0_internet"
             "t1_payload"
         )
         json_nesting = @("gateway", "servicerequest", "index")
         resource_name = "Firewall Rule"
         field_name = "rules"
-        excel_sheet_name = $config.excel.sheetnames.rules
+        excel_sheet_name = $config.excel_sheetnames.rules
         catalog_id = $config.api.catalog_ids.rules
         additional_deploy_chances = 1  # Rules run into API collisions shockingly often
         ddos_sleep_time = 3.0
