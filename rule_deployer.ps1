@@ -12,6 +12,8 @@ param (
     [String]$Action,
     [String]$Tenant,
     [String]$InlineJson,
+    [String]$ExcelFilePath,
+    [String]$VRAHostName,
     [String]$LogDir = "$PSScriptRoot\logs",
     [String]$ConfigPath = "$PSScriptRoot\config.json"
 )
@@ -24,6 +26,7 @@ function GetAndParseResourceData {
         [IOHandle]$io_handle,
         [Hashtable]$resource_config,
         [Hashtable]$config,
+        [Hashtable]$summary,
         [ApiAction[]]$actions,
         [Logger]$logger
     )
@@ -34,6 +37,7 @@ function GetAndParseResourceData {
     [DataPacket[]]$intermediate_data = $io_handle.GetResourceData($resource_config)
     foreach ($data_packet in $intermediate_data) { $logger.Debug("Found data at $($data_packet.origin_info)") }
     [Int]$num_data = $intermediate_data.Count
+    $summary[$resource_config.resource_name] = @{ total = $num_data }
     if ($num_data -eq 0) { $logger.Info("No data found!"); return }
 
     # Parse Data
@@ -62,7 +66,13 @@ function GetAndParseResourceData {
     }
 
     $logger.Info("$($to_deploy.Count)/$num_data parsed successfully$(Punctuate $to_deploy.Count $num_data)")
+    $summary[$resource_config.resource_name]["parsed"] = $to_deploy.Count
     return $to_deploy
+}
+
+enum InputMethod {
+    Json
+    Excel
 }
 
 function Main {
@@ -70,11 +80,20 @@ function Main {
         [String]$conf_path,
         [String]$tenant,
         [String]$inline_json,
+        [String]$excel_file_path,
         [String]$specific_action,
         [Logger]$logger
     )
 
     $logger.section = "Setup"
+    # Figure out Input Method
+    [InputMethod]$input_method = if ($inline_json -and -not $excel_file_path) { [InputMethod]::Json }
+    elseif ($excel_file_path -and -not $inline_json) {
+        if (-not $tenant) { throw "Please provide a tenant name when using Excel-input" }
+        else { [InputMethod]::Excel }
+    } else { throw "Please use either the InlineJson-argument or the ExcelFilePath-argument to supply input" }
+
+    # Load Config
     $logger.Info("Loading config from '$conf_path'...")
     [Hashtable]$config = Get-Config $conf_path # might throw
     [Hashtable[][]]$resource_config_groups = @(
@@ -97,7 +116,7 @@ function Main {
         "" {
             throw Format-Error -Message "Please provide a request action" -Hints @(
                 "Valid options are 'create', 'update' and 'delete'"
-                "Use 'create/update' to attempt both create and update requests"
+                "Use 'auto' to attempt both create and update requests"
             )
         }
         default {
@@ -115,26 +134,27 @@ function Main {
     [ApiHandle]$api_handle = [ApiHandle]::New($config); $api_handle.Init() # might throw
 
     $logger.Info("Initialising IO-Handle...")
-    [IOHandle]$io_handle = if ($inline_json) {
-        $logger.Info("Loading JSON-data...")
-        [JsonHandle]$json_handle = [JsonHandle]::New($inline_json, $config.nsx_image_path, $tenant) # might throw
-        foreach ($unused_resource in $json_handle.UnusedResources()) { $logger.Warn("Unused $unused_resource") }
-        $json_handle
-    } else {
-        if (-not $tenant) { throw "Please provide a tenant name when using Excel-input" }
-        $logger.Info("Using Excel-Handle...")
-        $logger.Debug("Attempting to open '$($config.excel.filepath)'")
-        [ExcelHandle]::New($config.nsx_image_path, $config.excel.filepath, $tenant)
+    [IOHandle]$io_handle = switch ($input_method) {
+        ([InputMethod]::Json) {
+            $logger.Info("Loading JSON-data...")
+            [JsonHandle]$json_handle = [JsonHandle]::New($inline_json, $config.nsx_image_path, $tenant) # might throw
+            foreach ($unused_resource in $json_handle.UnusedResources()) { $logger.Warn("Unused $unused_resource") }
+            $json_handle
+        }
+        ([InputMethod]::Excel) {
+            $logger.Info("Using Excel-Handle...")
+            $logger.Debug("Attempting to open '$excel_file_path'")
+            [ExcelHandle]::New($config.nsx_image_path, $excel_file_path, $tenant)
+        }
     }
-
-    # Display Request Plan
     $actions_info = (Join ($actions | ForEach-Object { "$_" }) "/")
     $resources_info = Join ($resource_config_groups | ForEach-Object {
         Format-List ($_ | ForEach-Object { "$($_.resource_name)s" })
     }) ", then "
-    $logger.Info("Ready!`n")
+    $logger.Info("Ready!`r`n")
     $logger.Info("Resource Order: $resources_info")
     $logger.Info("Request-Plan:   $actions_info resources")
+    [Hashtable]$summary = @{}
     [Bool]$in_progress = $true
 
     try {
@@ -149,6 +169,7 @@ function Main {
                     io_handle = $io_handle
                     resource_config = $resource_config
                     config = $config
+                    summary = $summary
                     actions = $actions
                     logger = $logger
                 }
@@ -178,6 +199,7 @@ function Main {
                 deploy_buckets = $deploy_buckets
                 io_handle = $io_handle
                 api_handle = $api_handle
+                summary = $summary
                 logger = $logger
             }
 
@@ -187,6 +209,10 @@ function Main {
     } finally {
         $logger.section = "Cleanup"; PrintDivider
         if ($in_progress) { $logger.Info("Excecution interrupted prematurely!") }
+        [String[]]$summaries = $summary.Keys | ForEach-Object {
+            "$([Int]($summary[$_].successful))/$($summary[$_].total) $_$(PluralityIn $summary[$_].total)"
+        }
+        $logger.Info("$(Format-List $summaries) ${actions_info}d successfully.")
         $logger.Info("Releasing IO-Handle..."); $io_handle.Release()
         $logger.Info("Saving Logs..."); $logger.Save($LogPath)
     }
@@ -201,6 +227,7 @@ $logger.Debug("Log-Output has been set to '$LogPath'")
     conf_path = $ConfigPath 
     tenant = $Tenant 
     inline_json = $InlineJson 
+    excel_file_path = $ExcelFilePath
     specific_action = $Action 
     logger = $logger
 }
@@ -208,6 +235,7 @@ $logger.Debug("Log-Output has been set to '$LogPath'")
 try { Main @main_params }
 catch {
     $logger.Error($_.Exception.Message)
-    $logger.Save($LogPath); exit 1
+    $logger.Save($LogPath); exit 3
 }
+
 Write-Host "Done!"
