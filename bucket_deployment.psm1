@@ -1,7 +1,6 @@
 using module ".\shared_types.psm1"
 using module ".\api_handle.psm1"
 using module ".\io_handle.psm1"
-using module ".\parsing.psm1"
 using module ".\logger.psm1"
 using module ".\utils.psm1"
 
