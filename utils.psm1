@@ -41,6 +41,13 @@ function Punctuate ([Int]$achieved, [Int]$total) {
     else                     { return "... :(" }
 }
 
+function NormalizeArray ([String[]]$array) {
+    # sorts and removes all duplicates and null values from an array
+    [String[]]$normalized = @($array | Where-Object { $_ } | Select-Object -Unique)
+    [Array]::Sort($normalized)
+    return $normalized
+}
+
 function ConvertTo-Hashtable {
     [CmdletBinding()]
     param(
