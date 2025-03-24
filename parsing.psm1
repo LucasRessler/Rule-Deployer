@@ -67,13 +67,6 @@ function ParseArrayWithAny ([String[]]$array) {
     }
 }
 
-function NormalizeArray ([String[]]$array) {
-    # sorts and removes all duplicates and null values from an array
-    [String[]]$normalized = @($array | Where-Object { $_ } | Select-Object -Unique)
-    [Array]::Sort($normalized)
-    return $normalized
-}
-
 # General Parser
 function ParseIntermediate {
     param(

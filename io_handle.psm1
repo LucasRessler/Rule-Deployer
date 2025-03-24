@@ -73,13 +73,15 @@ class IOHandle {
 class ExcelHandle : IOHandle {
     [String]$tenant
     [String]$file_path
+    [String]$request_id
     [Hashtable]$sheets = @{}
     
-    ExcelHandle ([String]$nsx_image_path, [String]$file_path, [String]$tenant) : base ($nsx_image_path) {
+    ExcelHandle ([String]$nsx_image_path, [String]$file_path, [String]$tenant, [String]$request_id) : base ($nsx_image_path) {
         if ($null -eq (Get-Module ImportExcel)) { Import-Module ImportExcel -ErrorAction Stop }
         if (-not (Test-Path "$file_path")) { throw "'$file_path' was not found :(" }
         $ext = [System.IO.Path]::GetExtension($file_path)
         if ($ext -notmatch '.xlsx$|.xlsm$') { throw "Extension type '$ext' is not supported :(" }
+        $this.request_id = $request_id
         $this.file_path = $file_path
         $this.tenant = $tenant
     }
@@ -121,12 +123,11 @@ class ExcelHandle : IOHandle {
                     $data_packet.value_origins[$key] = "column $([Char]([Int][Char]'A' + $col))"
                     $data_packet.data[$key] = $cell_data
                 }
-
                 if (-not $is_empty) { $data_packets += $data_packet }
             }
         }
 
-        return $data_packets | ForEach-Object { PrepareExcelData -data_packet $_ }
+        return $data_packets | ForEach-Object { PrepareExcelData -data_packet $_ -request_id $this.request_id }
     }
 
     [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {
@@ -163,14 +164,15 @@ class ExcelHandle : IOHandle {
 class JsonHandle : IOHandle {
     [String[]]$accepted_keys = @("security_groups", "services", "rules")
     [Hashtable]$input_data
+    [String]$request_id
 
-    JsonHandle ([String]$raw_json, [String]$nsx_image_path, [String]$tenant) : base ($nsx_image_path) {
+    JsonHandle ([String]$raw_json, [String]$nsx_image_path, [String]$tenant, [String]$request_id) : base ($nsx_image_path) {
         try { [Hashtable]$data = $raw_json | ConvertFrom-Json | ConvertTo-Hashtable }
         catch { $this.Release(); throw Format-Error -Message "Received incompatible json data!" -Hints @(
             "Ensure that your top-level json structure is an object!"
         ) -Cause $_.Exception.Message }
-        $this.input_data =  if ($tenant) { @{ $tenant = $data } }
-        else { $data }
+        $this.input_data =  if ($tenant) { @{ $tenant = $data } } else { $data }
+        $this.request_id = $request_id
     }
 
     [String[]]UnusedResources () {
@@ -193,7 +195,7 @@ class JsonHandle : IOHandle {
                 [String]$origin_info = $origin_info_base + $_["__o"]; $_.Remove("__o")
                 [DataPacket]::New($_, $resource_config, $tenant, $origin_info)
             } }
-        } | ForEach-Object { PrepareJsonData -data_packet $_ })
+        } | ForEach-Object { PrepareJsonData -data_packet $_ -request_id $this.request_id })
     }
 
     [Void] UpdateOutput ([Hashtable]$resource_config, [OutputValue]$value) {}

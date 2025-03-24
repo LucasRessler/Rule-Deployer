@@ -13,6 +13,7 @@ param (
     [String]$Tenant,
     [String]$InlineJson,
     [String]$ExcelFilePath,
+    [String]$RequestId,
     [String]$VRAHostName,
     [String]$LogDir = "$PSScriptRoot\logs",
     [String]$ConfigPath = "$PSScriptRoot\config.json"
@@ -79,6 +80,7 @@ function Main {
     param (
         [String]$conf_path,
         [String]$tenant,
+        [String]$request_id,
         [String]$inline_json,
         [String]$excel_file_path,
         [String]$specific_action,
@@ -89,7 +91,7 @@ function Main {
     # Figure out Input Method
     [InputMethod]$input_method = if ($inline_json -and -not $excel_file_path) { [InputMethod]::Json }
     elseif ($excel_file_path -and -not $inline_json) {
-        if (-not $tenant) { throw "Please provide a tenant name when using Excel-input" }
+        if (-not $tenant) { throw "Please provide a Tenant Name when using Excel-input" }
         else { [InputMethod]::Excel }
     } else { throw "Please use either the InlineJson-argument or the ExcelFilePath-argument to supply input" }
 
@@ -137,14 +139,14 @@ function Main {
     [IOHandle]$io_handle = switch ($input_method) {
         ([InputMethod]::Json) {
             $logger.Info("Loading JSON-data...")
-            [JsonHandle]$json_handle = [JsonHandle]::New($inline_json, $config.nsx_image_path, $tenant) # might throw
+            [JsonHandle]$json_handle = [JsonHandle]::New($inline_json, $config.nsx_image_path, $tenant, $request_id) # might throw
             foreach ($unused_resource in $json_handle.UnusedResources()) { $logger.Warn("Unused $unused_resource") }
             $json_handle
         }
         ([InputMethod]::Excel) {
             $logger.Info("Using Excel-Handle...")
             $logger.Debug("Attempting to open '$excel_file_path'")
-            [ExcelHandle]::New($config.nsx_image_path, $excel_file_path, $tenant)
+            [ExcelHandle]::New($config.nsx_image_path, $excel_file_path, $tenant, $request_id) # might throw
         }
     }
     $actions_info = (Join ($actions | ForEach-Object { "$_" }) "/")
@@ -155,67 +157,71 @@ function Main {
     $logger.Info("Resource Order: $resources_info")
     $logger.Info("Request-Plan:   $actions_info resources")
     [Hashtable]$summary = @{}
-    [Bool]$in_progress = $true
 
-    try {
-        foreach ($resource_config_group in $resource_config_groups) {
-            # Get, parse, collect data for each resource type in the group
-            [Int]$generous_factor = 0
-            [DataPacket[]]$to_deploy = @()
-            foreach ($resource_config in $resource_config_group) {
-                PrintDivider
-                $generous_factor = [Math]::Max($generous_factor, $resource_config.additional_deploy_chances)
-                [Hashtable]$get_and_parse_params = @{
-                    io_handle = $io_handle
-                    resource_config = $resource_config
-                    config = $config
-                    summary = $summary
-                    actions = $actions
-                    logger = $logger
-                }
-                try { $to_deploy += GetAndParseResourceData @get_and_parse_params }
-                catch { $logger.Error($_.Exception.Message) }
-            }
-
-            # Deploy parsed packets for the whole resource group
+    foreach ($resource_config_group in $resource_config_groups) {
+        # Get, parse, collect data for each resource type in the group
+        [Int]$generous_factor = 0
+        [DataPacket[]]$to_deploy = @()
+        foreach ($resource_config in $resource_config_group) {
             PrintDivider
-            [DeployBucket[]]$deploy_buckets = @()
-            if ($use_smart_actions) {
-                $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Create, [ApiAction]::Update))
-                $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Update, [Apiaction]::Create))
-                foreach ($data_packet in $to_deploy) {
-                    [Bool]$img_exists = $null -ne $io_handle.GetImage($data_packet.GetImageKeys())
-                    if ($img_exists) { $deploy_buckets[1].to_deploy += $data_packet }
-                    else { $deploy_buckets[0].to_deploy += $data_packet }
-                }
-            } else { $deploy_buckets += [DeployBucket]::New($actions, $to_deploy) }
-            # Duplicate the first action of each bucket for extra deploy chances
-            foreach ($bucket in $deploy_buckets) {
-                [ApiAction[]]$generous_actions = @($bucket.actions[0]) * $generous_factor + @($bucket.actions)
-                $bucket.actions = $generous_actions
-            }
-
-            [Hashtable]$deploy_params = @{
-                deploy_buckets = $deploy_buckets
+            $generous_factor = [Math]::Max($generous_factor, $resource_config.additional_deploy_chances)
+            [Hashtable]$get_and_parse_params = @{
                 io_handle = $io_handle
-                api_handle = $api_handle
+                resource_config = $resource_config
+                config = $config
                 summary = $summary
+                actions = $actions
                 logger = $logger
             }
-
-            try { DeployAndAwaitBuckets @deploy_params }
+            try { $to_deploy += GetAndParseResourceData @get_and_parse_params }
             catch { $logger.Error($_.Exception.Message) }
-        }; $in_progress = $false
-    } finally {
-        $logger.section = "Cleanup"; PrintDivider
-        if ($in_progress) { $logger.Info("Excecution interrupted prematurely!") }
-        [String[]]$summaries = $summary.Keys | ForEach-Object {
-            "$([Int]($summary[$_].successful))/$($summary[$_].total) $_$(PluralityIn $summary[$_].total)"
         }
-        $logger.Info("$(Format-List $summaries) ${actions_info}d successfully.")
-        $logger.Info("Releasing IO-Handle..."); $io_handle.Release()
-        $logger.Info("Saving Logs..."); $logger.Save($LogPath)
+
+        # Deploy parsed packets for the whole resource group
+        PrintDivider
+        [DeployBucket[]]$deploy_buckets = @()
+        if ($use_smart_actions) {
+            $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Create, [ApiAction]::Update))
+            $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Update, [Apiaction]::Create))
+            foreach ($data_packet in $to_deploy) {
+                [Bool]$img_exists = $null -ne $io_handle.GetImage($data_packet.GetImageKeys())
+                if ($img_exists) { $deploy_buckets[1].to_deploy += $data_packet }
+                else { $deploy_buckets[0].to_deploy += $data_packet }
+            }
+        } else { $deploy_buckets += [DeployBucket]::New($actions, $to_deploy) }
+        # Duplicate the first action of each bucket for extra deploy chances
+        foreach ($bucket in $deploy_buckets) {
+            [ApiAction[]]$generous_actions = @($bucket.actions[0]) * $generous_factor + @($bucket.actions)
+            $bucket.actions = $generous_actions
+        }
+
+        [Hashtable]$deploy_params = @{
+            deploy_buckets = $deploy_buckets
+            io_handle = $io_handle
+            api_handle = $api_handle
+            summary = $summary
+            logger = $logger
+        }
+
+        try { DeployAndAwaitBuckets @deploy_params }
+        catch { $logger.Error($_.Exception.Message) }
     }
+
+    # Cleanup
+    [Int]$ret = 0; [Int]$total = 0; [Int]$parsed = 0; [Int]$successful = 0
+    [String[]]$summaries = $summary.Keys | ForEach-Object {
+        $total += [Int]$summary[$_].total; $parsed += [Int]$summary[$_].parsed; $successful += [Int]$summary[$_].successful
+        "$([Int]($summary[$_].successful))/$($summary[$_].total) $_$(PluralityIn $summary[$_].total)"
+    }
+
+    $logger.section = "Cleanup"; PrintDivider
+    $logger.Info("$(Format-List $summaries) ${actions_info}d successfully.")
+    $logger.Info("Releasing IO-Handle..."); $io_handle.Release()
+    $logger.Info("Saving Logs..."); $logger.Save($LogPath)
+
+    if ($parsed -lt $total) { $ret += 1 }
+    if ($successful -lt $parsed) { $ret += 2 }
+    return $ret
 }
 
 [Logger]$logger = [Logger]::New($Host.UI)
@@ -226,16 +232,17 @@ $logger.Debug("Log-Output has been set to '$LogPath'")
 [Hashtable]$main_params = @{
     conf_path = $ConfigPath 
     tenant = $Tenant 
+    request_id = $RequestId
     inline_json = $InlineJson 
     excel_file_path = $ExcelFilePath
     specific_action = $Action 
     logger = $logger
 }
 
-try { Main @main_params }
-catch {
+try {
+    [Int]$ret = Main @main_params
+    Write-Host "Done!"; exit $ret
+} catch {
     $logger.Error($_.Exception.Message)
-    $logger.Save($LogPath); exit 3
+    $logger.Save($LogPath); exit 4
 }
-
-Write-Host "Done!"

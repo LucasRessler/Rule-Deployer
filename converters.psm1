@@ -17,7 +17,7 @@ function RulesDataFromJsonData ([DataPacket]$data_packet) {
 
 # Excel Preparation
 function SplitServicerequestsInExcelData ([DataPacket]$data_packet) {
-    [String[]]$req = $data_packet.data.all_servicerequests
+    [String[]]$req = $data_packet.data["all_servicerequests"]
     if ($req.Count -gt 0) { $data_packet.data["servicerequest"] = $req[0] }
     if ($req.Count -gt 1) { $data_packet.data["updaterequests"] = $req[1..$req.Count] }
     $data_packet.value_origins["servicerequest"] = $data_packet.value_origins["all_servicerequests"]
@@ -202,7 +202,11 @@ function ImageFromRule ([DataPacket]$data_packet) {
 
 # Splitter
 function PrepareJsonData {
-    param ([DataPacket]$data_packet)
+    param ([DataPacket]$data_packet, [String]$request_id)
+    if ($request_id) {
+        if ($null -eq $data_packet.data["servicerequest"]) { $data_packet.data["servicerequest"] = $request_id }
+        else { $data_packet.data["updaterequests"] = @($data_packet.data["updaterequests"], $request_id) | Where-Object { $_ } }
+    }
     switch ($data_packet.resource_config.id) {
         ([ResourceId]::Rule) { return RulesDataFromJsonData $data_packet }
         default              { return $data_packet }
@@ -210,7 +214,8 @@ function PrepareJsonData {
 }
 
 function PrepareExcelData {
-    param ([DataPacket]$data_packet)
+    param ([DataPacket]$data_packet, [String]$request_id)
+    if ($request_id) { $data_packet.data["all_servicerequests"] = @($data_packet.data["all_servicerequests"], $request_id) | Where-Object { $_ } }
     switch ($data_packet.resource_config.id) {
         ([ResourceId]::SecurityGroup) { return SplitServicerequestsInExcelData $data_packet }
         ([ResourceId]::Service)       { return SplitServicerequestsInExcelData $data_packet }
