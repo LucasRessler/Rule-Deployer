@@ -121,7 +121,8 @@ function AwaitSingleBucket {
         if ($status -eq [DeploymentStatus]::Successful) {
             [String]$short_info = "$action Successful"
             [String]$message = "Resource at $($deployment.origin_info) was ${action_verb}d successfully"
-            [OutputValue]$val = [OutputValue]::New($message, $short_info, $deployment.row_index)
+            [String]$requests = @($deployment.data["servicerequest"]; $deployment.data["updaterequests"]) -join "`r`n"
+            [OutputValue]$val = [OutputValue]::New($message, $short_info, $deployment.row_index, @{ all_servicerequests = $requests })
             $io_handle.UpdateOutput($resource_config, $val)
             $logger.Debug($message)
             if ($summary[$resource_config.resource_name]["successful"]) { $summary[$resource_config.resource_name]["successful"]++ }
