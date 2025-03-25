@@ -25,7 +25,7 @@ class DeployBucket {
 function AlignBucket {
     param ([DeployBucket]$bucket, [IoHandle]$io_handle)
     [ApiAction]$action = $bucket.GetCurrentAction()
-    [String]$k_sr = "servicerequest"; [String]$k_ur = "updaterequests"; [String]$k_dt = "date_creation"
+    [String]$k_sr = "request_id"; [String]$k_ur = "update_requests"; [String]$k_dt = "date_creation"
 
     foreach ($data_packet in $bucket.to_deploy) {
         [Hashtable]$data = $data_packet.data
@@ -121,8 +121,8 @@ function AwaitSingleBucket {
         if ($status -eq [DeploymentStatus]::Successful) {
             [String]$short_info = "$action Successful"
             [String]$message = "Resource at $($deployment.origin_info) was ${action_verb}d successfully"
-            [String]$requests = @($deployment.data["servicerequest"]; $deployment.data["updaterequests"]) -join "`r`n"
-            [OutputValue]$val = [OutputValue]::New($message, $short_info, $deployment.row_index, @{ all_servicerequests = $requests })
+            [String]$requests = @($deployment.data["request_id"]; $deployment.data["update_requests"]) -join "`r`n"
+            [OutputValue]$val = [OutputValue]::New($message, $short_info, $deployment.row_index, @{ all_request_ids = $requests })
             $io_handle.UpdateOutput($resource_config, $val)
             $logger.Debug($message)
             if ($summary[$resource_config.resource_name]["successful"]) { $summary[$resource_config.resource_name]["successful"]++ }

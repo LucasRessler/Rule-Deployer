@@ -16,13 +16,13 @@ function RulesDataFromJsonData ([DataPacket]$data_packet) {
 }
 
 # Excel Preparation
-function SplitServicerequestsInExcelData ([DataPacket]$data_packet) {
-    [String[]]$req = $data_packet.data["all_servicerequests"]
-    if ($req.Count -gt 0) { $data_packet.data["servicerequest"] = $req[0] }
-    if ($req.Count -gt 1) { $data_packet.data["updaterequests"] = $req[1..$req.Count] }
-    $data_packet.value_origins["servicerequest"] = $data_packet.value_origins["all_servicerequests"]
-    $data_packet.value_origins.Remove("all_servicerequests")
-    $data_packet.data.Remove("all_servicerequests")
+function SplitRequestIDsInExcelData ([DataPacket]$data_packet) {
+    [String[]]$req = $data_packet.data["all_request_ids"]
+    if ($req.Count -gt 0) { $data_packet.data["request_id"] = $req[0] }
+    if ($req.Count -gt 1) { $data_packet.data["update_requests"] = $req[1..$req.Count] }
+    $data_packet.value_origins["request_id"] = $data_packet.value_origins["all_request_ids"]
+    $data_packet.value_origins.Remove("all_request_ids")
+    $data_packet.data.Remove("all_request_ids")
     return $data_packet
 }
 
@@ -32,7 +32,7 @@ function RulesDataFromExcelData ([DataPacket]$data_paket) {
     if ($data_packet.data["t1_payload"] -or $gateways.Count -eq 0) { $gateways += "T1 Payload" }
     $data_packet.data.Remove("t0_internet")
     $data_packet.data.Remove("t1_payload")
-    $data_packet = SplitServicerequestsInExcelData $data_packet
+    $data_packet = SplitRequestIDsInExcelData $data_packet
     return @($gateways | ForEach-Object {
         [DataPacket]$new_packet = [DataPacket]::New($data_packet, (DeepCopy $data_packet.data))
         if ($gateways.Count -gt 1) { $new_packet.origin_info += " ($_)" }
@@ -58,7 +58,7 @@ function ConvertSecurityGroupsData ([Hashtable]$data, [ApiAction]$action) {
         ipAddress = Join @($data.ip_addresses | ForEach-Object { Join @($_.address, $_.net) "/" }) ", "
     }
 
-    [String]$requests = Join @($data.servicerequest, $data.updaterequests) ", "
+    [String]$requests = Join @($data.request_id, $data.update_requests) ", "
     [String]$description = Join @($requests, $data.hostname, $data.comment) " - "
     if ($description) { $body["description"] = $description }
     if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = "$name (IPSET)" }
@@ -96,7 +96,7 @@ function ConvertServicesData ([Hashtable]$data, [ApiAction]$action) {
         $i++
     }
 
-    [String]$requests = Join @($data.servicerequest, $data.updaterequests) ", "
+    [String]$requests = Join @($data.request_id, $data.update_requests) ", "
     [String]$description = Join @($requests, $data.comment) " - "
     if ($description) { $body["description"] = $description }
     if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = $name }
@@ -126,7 +126,7 @@ function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
         services = @($data.services | ForEach-Object { "${TEST_PREFIX}$_" })
     }
 
-    [String]$comment = Join @( (Join $data.updaterequests ", "), $data.comment) " - "
+    [String]$comment = Join @( (Join $data.update_requests ", "), $data.comment) " - "
     if ($comment) { $body["comment"] = $comment }
     if ($action -eq [ApiAction]::Update) { $body["elementToUpdate"] = $name }
     return $body
@@ -148,8 +148,8 @@ function ImageFromSecurityGroup ([DataPacket]$data_packet) {
     if ($data.comment) { $image["comment"] = $data.comment }
     if ($data.hostname) { $image["hostname"] = $data.hostname }
     if ($data.date_creation) { $image["date_creation"] = $data.date_creation }
-    if ($data.servicerequest) { $image["servicerequest"] = $data.servicerequest }
-    if ($data.updaterequests.Count) { $image["updaterequests"] = $data.updaterequests }
+    if ($data.request_id) { $image["request_id"] = $data.request_id }
+    if ($data.update_requests.Count) { $image["update_requests"] = $data.update_requests }
     $expanded = ExpandCollapsed $image @("name")
     return @{ $data_packet.tenant = @{ security_groups = $expanded } }
 }
@@ -169,8 +169,8 @@ function ImageFromService ([DataPacket]$data_packet) {
 
     if ($data.comment) { $image["comment"] = $data.comment }
     if ($data.date_creation) { $image["date_creation"] = $data.date_creation }
-    if ($data.servicerequest) { $image["servicerequest"] = $data.servicerequest }
-    if ($data.updaterequests.Count) { $image["updaterequests"] = $data.updaterequests }
+    if ($data.request_id) { $image["request_id"] = $data.request_id }
+    if ($data.update_requests.Count) { $image["update_requests"] = $data.update_requests }
     $expanded = ExpandCollapsed $image @("name")
     return @{ $data_packet.tenant = @{ services = $expanded } }
 }
@@ -180,7 +180,7 @@ function ImageFromRule ([DataPacket]$data_packet) {
     $name = $data.name
     $image = @{
         gateway = $data.gateway
-        servicerequest = $data.servicerequest
+        request_id = $data.request_id
         index = $data.index
         name = $name
 
@@ -195,8 +195,8 @@ function ImageFromRule ([DataPacket]$data_packet) {
 
     if ($data.comment) { $image["comment"] = $data.comment }
     if ($data.date_creation) { $image["date_creation"] = $data.date_creation }
-    if ($data.updaterequests.Count) { $image["updaterequests"] = $data.updaterequests}
-    $expanded = ExpandCollapsed $image @("gateway", "servicerequest", "index")
+    if ($data.update_requests.Count) { $image["update_requests"] = $data.update_requests}
+    $expanded = ExpandCollapsed $image @("gateway", "request_id", "index")
     return @{ $data_packet.tenant = @{ rules = $expanded } }
 }
 
@@ -204,8 +204,8 @@ function ImageFromRule ([DataPacket]$data_packet) {
 function PrepareJsonData {
     param ([DataPacket]$data_packet, [String]$request_id)
     if ($request_id) {
-        if ($null -eq $data_packet.data["servicerequest"]) { $data_packet.data["servicerequest"] = $request_id }
-        else { $data_packet.data["updaterequests"] = @($data_packet.data["updaterequests"]; $request_id) | Where-Object { $_ } }
+        if ($null -eq $data_packet.data["request_id"]) { $data_packet.data["request_id"] = $request_id }
+        else { $data_packet.data["update_requests"] = @($data_packet.data["update_requests"]; $request_id) | Where-Object { $_ } }
     }
     switch ($data_packet.resource_config.id) {
         ([ResourceId]::Rule) { return RulesDataFromJsonData $data_packet }
@@ -215,10 +215,10 @@ function PrepareJsonData {
 
 function PrepareExcelData {
     param ([DataPacket]$data_packet, [String]$request_id)
-    if ($request_id) { $data_packet.data["all_servicerequests"] = @($data_packet.data["all_servicerequests"]; $request_id) | Where-Object { $_ } }
+    if ($request_id) { $data_packet.data["all_request_ids"] = @($data_packet.data["all_request_ids"]; $request_id) | Where-Object { $_ } }
     switch ($data_packet.resource_config.id) {
-        ([ResourceId]::SecurityGroup) { return SplitServicerequestsInExcelData $data_packet }
-        ([ResourceId]::Service)       { return SplitServicerequestsInExcelData $data_packet }
+        ([ResourceId]::SecurityGroup) { return SplitRequestIDsInExcelData $data_packet }
+        ([ResourceId]::Service)       { return SplitRequestIDsInExcelData $data_packet }
         ([ResourceId]::Rule)          { return RulesDataFromExcelData $data_packet }
         default                       { return $data_packet }
     }

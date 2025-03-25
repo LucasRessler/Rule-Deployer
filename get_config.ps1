@@ -67,7 +67,7 @@ function Get-Config ([String]$conf_path) {
         }
         regex = @{
             group_name = "[A-Za-z0-9_.-]+"
-            servicerequest = "[A-Za-z]+\d+"
+            request_id = "[A-Za-z]+\d+"
             ip_addr = $regex_ip
             ip_cidr = "$regex_ip(/$regex_cidr)?"         # ip or ip/cidr
             port = "[A-Za-z0-9]+\s*:\s*$regex_u16_range" # word:u16-range - protocols checked in `ParsePort`
