@@ -205,7 +205,7 @@ function PrepareJsonData {
     param ([DataPacket]$data_packet, [String]$request_id)
     if ($request_id) {
         if ($null -eq $data_packet.data["servicerequest"]) { $data_packet.data["servicerequest"] = $request_id }
-        else { $data_packet.data["updaterequests"] = @($data_packet.data["updaterequests"], $request_id) | Where-Object { $_ } }
+        else { $data_packet.data["updaterequests"] = @($data_packet.data["updaterequests"]; $request_id) | Where-Object { $_ } }
     }
     switch ($data_packet.resource_config.id) {
         ([ResourceId]::Rule) { return RulesDataFromJsonData $data_packet }
@@ -215,7 +215,7 @@ function PrepareJsonData {
 
 function PrepareExcelData {
     param ([DataPacket]$data_packet, [String]$request_id)
-    if ($request_id) { $data_packet.data["all_servicerequests"] = @($data_packet.data["all_servicerequests"], $request_id) | Where-Object { $_ } }
+    if ($request_id) { $data_packet.data["all_servicerequests"] = @($data_packet.data["all_servicerequests"]; $request_id) | Where-Object { $_ } }
     switch ($data_packet.resource_config.id) {
         ([ResourceId]::SecurityGroup) { return SplitServicerequestsInExcelData $data_packet }
         ([ResourceId]::Service)       { return SplitServicerequestsInExcelData $data_packet }
