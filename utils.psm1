@@ -42,10 +42,7 @@ function Punctuate ([Int]$achieved, [Int]$total) {
 }
 
 function NormalizeArray ([String[]]$array) {
-    # sorts and removes all duplicates and null values from an array
-    [String[]]$normalized = @($array | Where-Object { $_ } | Select-Object -Unique)
-    [Array]::Sort($normalized)
-    return $normalized
+    return @($array | Where-Object { $_ } | Select-Object -Unique)
 }
 
 function ConvertTo-Hashtable {
