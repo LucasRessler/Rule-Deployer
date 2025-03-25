@@ -3,6 +3,7 @@ using module ".\converters.psm1"
 using module ".\utils.psm1"
 
 class OutputValue {
+    [Hashtable]$additional_output
     [String]$short_info
     [String]$message
     [Int]$excel_index
@@ -11,6 +12,13 @@ class OutputValue {
         $this.message = $message
         $this.short_info = $short_info
         $this.excel_index = $excel_index
+        $this.additional_output = @{}
+    }
+    OutputValue ([String]$message, [String]$short_info, [Int]$excel_index, [Hashtable]$additional_output) {
+        $this.message = $message
+        $this.short_info = $short_info
+        $this.excel_index = $excel_index
+        $this.additional_output = $additional_output
     }
 }
 
@@ -94,8 +102,9 @@ class ExcelHandle : IOHandle {
             [Int]$len = $sheet_contents.Count
             while (-not ([String]$sheet_contents[$len - 1].PSObject.Properties.Value).Trim()) { $len-- }
             $this.sheets[$sheet_name] = [PSCustomObject]@{
-                native_keys = $sheet_contents[0].PSObject.Properties.Name
                 contents = [Hashtable[]]($sheet_contents[0..$len] | ConvertTo-Hashtable)
+                native_keys = $sheet_contents[0].PSObject.Properties.Name
+                additional_output_keys = @()
             }
         }
         return $this.sheets[$sheet_name]
@@ -136,6 +145,11 @@ class ExcelHandle : IOHandle {
         [PSCustomObject]$sheet = $this.GetSheet($sheet_name)
         [Hashtable]$row_contents = $sheet.contents[$index]
         [String]$output_key = $sheet.native_keys[$resource_config.excel_format.Count]
+        foreach ($key in $value.additional_output.Keys) {
+            [String]$native_key = $sheet.native_keys[$resource_config.excel_format.IndexOf($key)]
+            if ($native_key -notin $sheet.additional_output_keys) { $sheet.additional_output_keys += $native_key }
+            $row_contents[$native_key] = $value.additional_output[$key]
+        }
         if (-not $value.short_info) { return }
         if ($row_contents[$output_key] -ne $value.short_info) {
             $row_contents[$output_key] = Join @($row_contents[$output_key], $value.short_info) ", "
@@ -157,6 +171,12 @@ class ExcelHandle : IOHandle {
                 New-ConditionalText -ConditionalType ContainsText "Successful" -BackgroundColor "LightGreen" -ConditionalTextColor "Green" -Range $format_range
                 New-ConditionalText -ConditionalType NotContainsText "Successful" -BackgroundColor "Pink" -ConditionalTextColor "Red" -Range $format_range
             )
+            foreach ($key in $sheet.additional_output_keys) {
+                [Int]$column = $sheet.native_keys.IndexOf($key) + 1
+                @($sheet.contents | ForEach-Object {
+                    [PSCustomObject]@{ $key = $_[$key] }
+                }) | Export-Excel -Path $this.file_path -WorksheetName $sheet_name -StartColumn $column
+            }
         }
     }
 }
