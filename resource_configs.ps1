@@ -26,14 +26,14 @@ function Get-SecurityGroupsConfig ([Hashtable]$config) {
                 dbg_name = "Security Group Comment"
                 is_optional = $true
             }
-            servicerequest = @{
-                dbg_name = "Initial Servicerequest"
-                regex = $config.regex.servicerequest
+            request_id = @{
+                dbg_name = "Initial Request ID"
+                regex = $config.regex.request_id
                 is_optional = $true
             }
-            updaterequests = @{
-                dbg_name = "Update Servicerequest"
-                regex = $config.regex.servicerequest
+            update_requests = @{
+                dbg_name = "Update Request IDs"
+                regex = $config.regex.request_id
                 is_optional = $true
                 is_array = $true
                 postparser = { param($value) NormalizeArray $value }
@@ -44,7 +44,7 @@ function Get-SecurityGroupsConfig ([Hashtable]$config) {
             "ip_addresses"
             "hostname"
             "comment"
-            "all_servicerequests"
+            "all_request_ids"
         )
         json_nesting = @("name")
         resource_name = "Security Group"
@@ -75,14 +75,14 @@ function Get-ServicesConfig ([Hashtable]$config) {
                 dbg_name = "Service Comment"
                 is_optional = $true
             }
-            servicerequest = @{
-                dbg_name = "Initial Servicerequest"
-                regex = $config.regex.servicerequest
+            request_id = @{
+                dbg_name = "Initial Request ID"
+                regex = $config.regex.request_id
                 is_optional = $true
             }
-            updaterequests = @{
-                dbg_name = "Update Servicerequest"
-                regex = $config.regex.servicerequest
+            update_requests = @{
+                dbg_name = "Update Request IDs"
+                regex = $config.regex.request_id
                 is_optional = $true
                 is_array = $true
                 postparser = { param($value) NormalizeArray $value }
@@ -92,7 +92,7 @@ function Get-ServicesConfig ([Hashtable]$config) {
             "name"
             "ports"
             "comment"
-            "all_servicerequests"
+            "all_request_ids"
         )
         json_nesting = @("name")
         resource_name = "Service"
@@ -112,7 +112,7 @@ function Get-RulesConfig ([Hashtable]$config) {
                 is_unique = $true
                 generator = {
                     param([Hashtable]$data)
-                    Join @($data.gateway, $data.servicerequest, $data.index) " - "
+                    Join @($data.gateway, $data.request_id, $data.index) " - "
                 }
             }
             name = @{
@@ -120,7 +120,7 @@ function Get-RulesConfig ([Hashtable]$config) {
                 regex = $config.regex.group_name
                 generator = {
                     param([Hashtable]$data)
-                    Join @($data.servicerequest, $data.index, "Auto") "_"
+                    Join @($data.request_id, $data.index, "Auto") "_"
                 }
             }
             sources = @{
@@ -178,14 +178,14 @@ function Get-RulesConfig ([Hashtable]$config) {
                 regex = "[1-9][0-9]*"
                 required_for_delete = $true
             }
-            servicerequest = @{
-                dbg_name = "Initial Servicerequest"
-                regex = $config.regex.servicerequest
+            request_id = @{
+                dbg_name = "Initial Request ID"
+                regex = $config.regex.request_id
                 required_for_delete = $true
             }
-            updaterequests = @{
-                dbg_name = "Update Servicerequest"
-                regex = $config.regex.servicerequest
+            update_requests = @{
+                dbg_name = "Update Request IDs"
+                regex = $config.regex.request_id
                 is_optional = $true
                 is_array = $true
                 postparser = { param($value) NormalizeArray $value }
@@ -197,11 +197,11 @@ function Get-RulesConfig ([Hashtable]$config) {
             "destinations"
             "services"
             "comment"
-            "all_servicerequests"
+            "all_request_ids"
             "t0_internet"
             "t1_payload"
         )
-        json_nesting = @("gateway", "servicerequest", "index")
+        json_nesting = @("gateway", "request_id", "index")
         resource_name = "Firewall Rule"
         field_name = "rules"
         excel_sheet_name = $config.excel_sheetnames.rules
