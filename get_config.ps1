@@ -1,32 +1,5 @@
 function Get-Config ([String]$conf_path) {
-    if ($null -eq (Get-Module -Name "functions" -ErrorAction SilentlyContinue)) { Import-Module "$PSScriptRoot\shared_functions.ps1" }
-
-    $catalogOptionsVraHostnames = Get-CatalogOptions -Scope "FCI_SHARED" -Query "/*/HOSTNAME" -ErrorAction Stop
-    $catalogOptionsVraHostnameKey = ($catalogOptionsVraHostnames.raw.GetEnumerator() | Where-Object { $VRAHostName -match $_.KEY1 }).KEY1
-    $catalogOptionsVra = Get-CatalogOptions -Scope "FCI_SHARED" -Query "/$catalogOptionsVraHostnameKey" -ErrorAction Stop
-    $VraSpecs = [PSCustomObject]@{
-	    svcname = $catalogOptionsVraHostnameKey     
-	    vchost  = ($catalogOptionsVra.raw.GetEnumerator() | Where-Object { $_.KEY2 -eq 'HOSTNAME' }).VALUE		
-        vcuser  = ($catalogOptionsVra.raw.GetEnumerator() | Where-Object { $_.KEY2 -eq 'XAUTO_USER' }).VALUE
-	    sso_domain = ($catalogOptionsVra.raw.GetEnumerator() | Where-Object { $_.KEY2 -eq 'SSO_DOMAIN' }).VALUE 
-    }
-    if (!$VraSpecs.svcname) {
-    	Write-Error "ERROR: Unable to load FCI VRA specs for $VRAHostName from CatalogOptions. :-("
-    	exit 666
-    }
-    
-    $CmdbData = Get-CMDBService -ServiceName $($VraSpecs.svcname)
-    if (!$CmdbData['0'].SVCID) {
-    	Write-Error "ERROR: Unable to get SVCID of FCI VRA $VRA HostName from CMDB. :-("
-    	exit 666
-    }
-    
-    $VraCredentials = Get-RMDBCredentials -CmdbId $CmdbData['0'].SVCID -XaUser $VraSpecs.vcuser
-    if (!$VraCredentials.data.password) {
-    	Write-Error "ERROR: Unable to get password for $($VraSpecs.vcuser) from RMDB. :-("
-    	exit 666
-    }
-    
+    # Assert that the config file has the right format
     try { $config = Get-Content $conf_path -ErrorAction Stop | ConvertFrom-Json }
     catch { throw Format-Error -Message "The config could not be loaded" -cause $_.Exception.Message }
     $faults = Assert-Format $config @{
@@ -40,6 +13,24 @@ function Get-Config ([String]$conf_path) {
             -Hints $faults
     }
 
+    # Fetch Vra Credentials and Host Url 
+    if ($null -eq (Get-Module -Name "functions" -ErrorAction SilentlyContinue)) { Import-Module "$PSScriptRoot\shared_functions.ps1" }
+    $catalogOptionsVraHostnames = Get-CatalogOptions -Scope "FCI_SHARED" -Query "/*/HOSTNAME" -ErrorAction Stop
+    $catalogOptionsVraHostnameKey = ($catalogOptionsVraHostnames.raw.GetEnumerator() | Where-Object { $VRAHostName -match $_.KEY1 }).KEY1
+    $catalogOptionsVra = Get-CatalogOptions -Scope "FCI_SHARED" -Query "/$catalogOptionsVraHostnameKey" -ErrorAction Stop
+    $VraSpecs = [PSCustomObject]@{
+	    svcname = $catalogOptionsVraHostnameKey     
+	    vchost  = ($catalogOptionsVra.raw.GetEnumerator() | Where-Object { $_.KEY2 -eq 'HOSTNAME' }).VALUE		
+        vcuser  = ($catalogOptionsVra.raw.GetEnumerator() | Where-Object { $_.KEY2 -eq 'XAUTO_USER' }).VALUE
+	    sso_domain = ($catalogOptionsVra.raw.GetEnumerator() | Where-Object { $_.KEY2 -eq 'SSO_DOMAIN' }).VALUE 
+    }
+    if (!$VraSpecs.svcname) { throw "Unable to load FCI VRA specs for $VRAHostName from CatalogOptions. :-(" }
+    $CmdbData = Get-CMDBService -ServiceName $($VraSpecs.svcname)
+    if (!$CmdbData['0'].SVCID) { throw "Unable to get SVCID of FCI VRA $VRA HostName from CMDB. :-(" }
+    $VraCredentials = Get-RMDBCredentials -CmdbId $CmdbData['0'].SVCID -XaUser $VraSpecs.vcuser
+    if (!$VraCredentials.data.password) { throw "Unable to get password for $($VraSpecs.vcuser) from RMDB. :-(" }
+    
+    # Build up complete Config
     $base_url = "https://" + $VraSpecs.vchost
     $regex_cidr = "([1-9]|[1-2][0-9]|3[0-2])"             # Decimal number from 1-32
     $regex_u8 = "([0-1]?[0-9]{1,2}|2([0-4][0-9]|5[0-5]))" # Decimal number from 0-255
@@ -47,7 +38,7 @@ function Get-Config ([String]$conf_path) {
     $regex_u16 = "([0-5]?[0-9]{1,4}|6([0-4][0-9]{3}|5([0-4][0-9]{2}|5([0-2][0-9]|3[0-5]))))" # Decimal number from 0-65535
     $regex_u16_range = "$regex_u16(\s*-\s*$regex_u16)?"                                      # u16 or u16-u16
 
-    @{
+    return @{
         nsx_image_path = $config.nsx_image_path
         log_directory = $config.log_directory
         excel_sheetnames = $config.excel_sheetnames
