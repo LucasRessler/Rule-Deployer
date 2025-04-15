@@ -130,11 +130,13 @@ function Main {
         }
     }
 
+    # Create Api Handle
     $logger.Info("Initialising communication with API...")
     # very dangerously disabling validating certification - sadly necessary
     [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
     [ApiHandle]$api_handle = [ApiHandle]::New($config); $api_handle.Init() # might throw
 
+    # Create JSON or Excel IO Handle
     $logger.Info("Initialising IO-Handle...")
     [IOHandle]$io_handle = switch ($input_method) {
         ([InputMethod]::Json) {
@@ -149,8 +151,10 @@ function Main {
             [ExcelHandle]::New($config.nsx_image_path, $excel_file_path, $tenant, $request_id) # might throw
         }
     }
-    $actions_info = (Join ($actions | ForEach-Object { "$_" }) "/")
-    $resources_info = Join ($resource_config_groups | ForEach-Object {
+
+    # Provide Info on Planned Request Order
+    [String]$actions_info = Join ($actions | ForEach-Object { "$_" }) "/"
+    [String]$resources_info = Join ($resource_config_groups | ForEach-Object {
         Format-List ($_ | ForEach-Object { "$($_.resource_name)s" })
     }) ", then "
     $logger.Info("Ready!`r`n")
@@ -202,7 +206,6 @@ function Main {
             summary = $summary
             logger = $logger
         }
-
         try { DeployAndAwaitBuckets @deploy_params }
         catch { $logger.Error($_.Exception.Message) }
     }
@@ -224,11 +227,15 @@ function Main {
     return $ret
 }
 
+# --- Program Flow ---
+# Initialise Logger
 [Logger]$logger = [Logger]::New($Host.UI)
 [String]$LogPath = "$LogDir\ruledeployer_$(Get-Date -Format "yyyy-MM-dd_HH-mm-ss").log"
+New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 $logger.Debug("I was invoked with '$($MyInvocation.Line)'")
 $logger.Debug("Log-Output has been set to '$LogPath'")
 
+# Call Main Function
 [Hashtable]$main_params = @{
     conf_path = $ConfigPath 
     tenant = $Tenant 
@@ -238,11 +245,10 @@ $logger.Debug("Log-Output has been set to '$LogPath'")
     specific_action = $Action 
     logger = $logger
 }
-
 try {
     [Int]$ret = Main @main_params
     Write-Host "Done!"; exit $ret
 } catch {
     $logger.Error($_.Exception.Message)
-    $logger.Save($LogPath); exit 4
+    $logger.Save($LogPath); exit 666
 }
