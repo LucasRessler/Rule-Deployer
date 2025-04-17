@@ -1,4 +1,5 @@
 using module ".\bucket_deployment.psm1"
+using module ".\nsx_api_handle.psm1"
 using module ".\shared_types.psm1"
 using module ".\api_handle.psm1"
 using module ".\io_handle.psm1"
@@ -15,6 +16,7 @@ param (
     [String]$ExcelFilePath,
     [String]$RequestId,
     [String]$VRAHostName,
+    [String]$NSXHostDomain,
     [String]$LogDir = "$PSScriptRoot\logs",
     [String]$ConfigPath = "$PSScriptRoot\config.json"
 )
@@ -130,11 +132,25 @@ function Main {
         }
     }
 
+    # Very dangerously trusting all Certs - sadly necessary
+    if (!"TrustAllCertsPolicy" -as [type]) {
+        Add-Type @"
+using System.Net;
+using System.Security.Cryptography.X509Certificates;
+public class TrustAllCertsPolicy : ICertificatePolicy {
+    public bool CheckValidationResult(ServicePoint srvPoint, X509Certificate certificate, WebRequest request, int certificateProblem) {
+    return true;
+    }
+}
+"@  }; [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+
     # Create Api Handle
     $logger.Info("Initialising communication with API...")
-    # very dangerously disabling validating certification - sadly necessary
-    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
     [ApiHandle]$api_handle = [ApiHandle]::New($config); $api_handle.Init() # might throw
+
+    # Optionally create NSX Api Handle
+    [NsxApiHandle]$nsx_api_handle = $null
+    if ($NSXHostDomain) { $nsx_api_handle = [NsxApiHandle]::New($NSXHostDomain) } # might throw
 
     # Create JSON or Excel IO Handle
     $logger.Info("Initialising IO-Handle...")
@@ -163,7 +179,7 @@ function Main {
     [Hashtable]$summary = @{}
 
     foreach ($resource_config_group in $resource_config_groups) {
-        # Get, parse, collect data for each resource type in the group
+        # Get, parse and collect data for each resource type in the group
         [Int]$generous_factor = 0
         [DataPacket[]]$to_deploy = @()
         foreach ($resource_config in $resource_config_group) {
@@ -184,7 +200,19 @@ function Main {
         # Deploy parsed packets for the whole resource group
         PrintDivider
         [DeployBucket[]]$deploy_buckets = @()
-        if ($use_smart_actions) {
+        if ($use_smart_actions -and $nsx_api_handle) {
+            # If we have NSX Api access, we definitively know which action to take
+            $logger.Debug("Comparing Resources via NSX Api")
+            $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Create))
+            $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Update))
+            foreach ($data_packet in $to_deploy) {
+                [Bool]$resource_exists = $nsx_api_handle.ResourceExists($data_packet)
+                if ($resource_exists) { $deploy_buckets[1].to_deploy += $data_packet }
+                else { $deploy_buckets[0].to_deploy += $data_packet }
+            }
+        } elseif ($use_smart_actions) {
+            # Without the Api, we can still make a guess based on the Nsx Image
+            $logger.Debug("Comparing Resources with NSX Image")
             $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Create, [ApiAction]::Update))
             $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Update, [Apiaction]::Create))
             foreach ($data_packet in $to_deploy) {
