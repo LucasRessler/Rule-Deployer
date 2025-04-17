@@ -202,17 +202,18 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
         [DeployBucket[]]$deploy_buckets = @()
         if ($use_smart_actions -and $nsx_api_handle) {
             # If we have NSX Api access, we definitively know which action to take
-            $logger.Debug("Comparing Resources via NSX Api")
+            $logger.Info("Checking for existing Resources via NSX Api...")
             $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Create))
             $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Update))
             foreach ($data_packet in $to_deploy) {
-                [Bool]$resource_exists = $nsx_api_handle.ResourceExists($data_packet)
+                try { [Bool]$resource_exists = $nsx_api_handle.ResourceExists($data_packet) }
+                catch { $logger.Error((Format-Error -Message "NSX Get-Request unsuccessful" -Cause $_.Exception.Message)); break }
                 if ($resource_exists) { $deploy_buckets[1].to_deploy += $data_packet }
                 else { $deploy_buckets[0].to_deploy += $data_packet }
             }
         } elseif ($use_smart_actions) {
             # Without the Api, we can still make a guess based on the Nsx Image
-            $logger.Debug("Comparing Resources with NSX Image")
+            $logger.Info("Comparing Resources with NSX Image...")
             $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Create, [ApiAction]::Update))
             $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Update, [Apiaction]::Create))
             foreach ($data_packet in $to_deploy) {
