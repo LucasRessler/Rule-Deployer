@@ -13,8 +13,8 @@ function Get-Config ([String]$conf_path) {
             -Hints $faults
     }
 
-    # Fetch Vra Credentials and Host Url 
-    if ($null -eq (Get-Module -Name "functions" -ErrorAction SilentlyContinue)) { Import-Module "$PSScriptRoot\shared_functions.ps1" }
+    # Fetch Vra Credentials and Host Url
+    if ($null -eq (Get-Module -Name "shared_functions" -ErrorAction SilentlyContinue)) { Import-Module "$PSScriptRoot\shared_functions.ps1" }
     $catalogOptionsVraHostnames = Get-CatalogOptions -Scope "FCI_SHARED" -Query "/*/HOSTNAME" -ErrorAction Stop
     $catalogOptionsVraHostnameKey = ($catalogOptionsVraHostnames.raw.GetEnumerator() | Where-Object { $VRAHostName -match $_.KEY1 }).KEY1
     $catalogOptionsVra = Get-CatalogOptions -Scope "FCI_SHARED" -Query "/$catalogOptionsVraHostnameKey" -ErrorAction Stop
