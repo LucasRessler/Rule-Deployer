@@ -56,8 +56,7 @@ class ApiHandle {
             $this.headers = @{
                 Authorization = "Bearer $access_token"
             }
-        }
-        catch {
+        } catch {
             throw Format-Error -Message "Failed to obtain access token!" -Cause $_.Exception.Message -Hints @(
                 "Ensure your connection is stable"
             )
@@ -74,8 +73,7 @@ class ApiHandle {
         try {
             $url = "$($this.url_project_id)?`$filter=name eq '$tenant'" 
             $response = Invoke-RestMethod $url -Method Get -Headers $this.headers
-        }
-        catch {
+        } catch {
             $this.tenant_map[$tenant] = $failed
             throw Format-Error -Message "Failed to get project id for tenant '$tenant'!" -Cause $_.Exception.Message
         }
@@ -84,8 +82,7 @@ class ApiHandle {
             [String]$id = $response.content[0].id
             $this.tenant_map[$tenant] = $id
             return $id
-        }
-        else {
+        } else {
             $this.tenant_map[$tenant] = $failed
             throw Format-Error -Message "Failed to get project id!" -Hints @(
                 "Expected exactly 1 project with the given Tenant name, found $($response.content.Length)"
@@ -125,9 +122,9 @@ class ApiHandle {
     }
 
     [DeploymentStatus] WaitForDeployment ([String]$deployment_id) {
-        $status = $null
-        $complete = $false
-        $wait_time = 0
+        [DeploymentStatus]$status = [DeploymentStatus]::InProgress
+        [Bool]$complete = $false
+        [Int]$wait_time = 0
         while (-not $complete) {
             Start-Sleep $wait_time
             $status = $this.CheckDeployment($deployment_id)
