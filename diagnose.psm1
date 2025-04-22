@@ -69,7 +69,7 @@ function DiagnoseWithImg {
         $faults += @( # Can only happen for FW Rules
             "Make sure that all security groups and services used in the rule exist"
             "It's likely that one or more of the following resources don't exist:"
-            @($missing_depends | ForEach-Object { "- '$_'" })
+            @($missing_depends | ForEach-Object { "- $_" })
             "Note: I can only make statements for resources that were modified with this tool"
         )
     }
@@ -91,7 +91,7 @@ function DiagnoseWithImg {
         $faults += @( # Can only happen for Security Groups and Services
             "Make sure that no rules still use this resource"
             "It's likely that one or more of the following rules still use it:"
-            @($dependees_found | ForEach-Object { "- '$_'" })
+            @($dependees_found | ForEach-Object { "- $_" })
             "Note: I can only make statements for resources that were modified with this tool"
         )
     }
@@ -174,7 +174,7 @@ function DiagnoseWithApi {
     if (($tried_create -or $tried_update) -and $missing_depends.Count) {
         $faults += @( # Can only happen for FW Rules
             "The rule depends on these nonexistent resources:"
-            @($missing_depends | ForEach-Object { "- '$_'" })
+            @($missing_depends | ForEach-Object { "- $_" })
         )
     }
     if ($tried_create -and -not $tried_update -and $already_exists) {
@@ -192,7 +192,7 @@ function DiagnoseWithApi {
     if ($tried_delete -and $dependees_found.Count) {
         $faults += @( # Can only happen for Security Groups and Services
             "One or more rules still depends on this resource:"
-            @($dependees_found | ForEach-Object { "- '$_'" })
+            @($dependees_found | ForEach-Object { "- $_" })
         )
     }
     if ($tried_delete -and -not $already_exists) {
