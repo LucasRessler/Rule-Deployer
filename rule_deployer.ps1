@@ -230,6 +230,7 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
 
         [Hashtable]$deploy_params = @{
             deploy_buckets = $deploy_buckets
+            nsx_api_handle = $nsx_api_handle
             io_handle = $io_handle
             api_handle = $api_handle
             summary = $summary

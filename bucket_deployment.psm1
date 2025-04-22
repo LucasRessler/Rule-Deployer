@@ -1,3 +1,4 @@
+using module ".\nsx_api_handle.psm1"
 using module ".\shared_types.psm1"
 using module ".\api_handle.psm1"
 using module ".\io_handle.psm1"
@@ -143,6 +144,7 @@ function AwaitSingleBucket {
 function DeployAndAwaitBuckets {
     param (
         [DeployBucket[]]$deploy_buckets,
+        [NsxApiHandle]$nsx_api_handle,
         [ApiHandle]$api_handle,
         [IoHandle]$io_handle,
         [Hashtable]$summary,
@@ -184,7 +186,7 @@ function DeployAndAwaitBuckets {
         foreach ($failed_packet in $bucket.to_deploy) {
             [String]$short_info = "$actions_str Failed"
             [String]$message = Format-Error -Message "$requests_str for resource at $($failed_packet.origin_info) failed" `
-                -Hints (DiagnoseFailure $io_handle $failed_packet $bucket.actions)
+                -Hints (DiagnoseFailure $io_handle $failed_packet $bucket.actions $nsx_api_handle)
             [OutputValue]$val = [OutputValue]::New($message, $short_info, $failed_packet.row_index)
             $io_handle.UpdateOutput($failed_packet.resource_config, $val)
             $logger.Error($message)

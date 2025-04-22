@@ -31,8 +31,8 @@ function PluralityIn ([Int]$number, [String]$singular = "", [String]$plural = "s
 }
 
 function Punctuate ([Int]$achieved, [Int]$total) {
-    if ($achieved -gt $total -or $achieved -lt 0) { return "!? >:O"} # Impossible case
-    if ($total -eq 0) { return "." }                                 # 0/0 case
+    if ($achieved -gt $total -or $achieved -lt 0) { return "!? >:O" } # Impossible case
+    if ($total -eq 0) { return "." }                                  # 0/0 case
 
     [Float]$ratio = [Math]::Round($achieved / $total, 2)
     if ($ratio -eq 1.00)     { return "! :D" }
