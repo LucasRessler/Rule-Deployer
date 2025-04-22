@@ -191,7 +191,7 @@ function DiagnoseWithApi {
     }
     if ($tried_delete -and $dependees_found.Count) {
         $faults += @( # Can only happen for Security Groups and Services
-            "One or more rules still depends on this resource:"
+            "The following rules still depend on this resource:"
             @($dependees_found | ForEach-Object { "- $_" })
         )
     }
