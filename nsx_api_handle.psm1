@@ -20,30 +20,31 @@ class NsxApiHandle {
         [String]$url = "$($this.base_url)/api/v1/$path"
         return Invoke-RestMethod -Method Get -Uri $url -Headers $this.headers
     }
-    [PSCustomObject] GetSecurityGroup ([String]$tenant, [String]$name) {
-        return $this.ApiGet("infra/domains/default/groups/${tenant}_grp-ips-${name}")
+    [String] SecurityGroupPath ([String]$tenant, [String]$name) {
+        return "infra/domains/default/groups/${tenant}_grp-ips-${name}"
     }
-    [PSCustomObject] GetService ([String]$tenant, [String]$name) {
-        return $this.ApiGet("infra/services/${tenant}_svc-${name}")
+    [String] ServicePath ([String]$tenant, [String]$name) {
+        return "infra/services/${tenant}_svc-${name}"
     }
-    [PSCustomObject] GetRule ([String]$tenant, [String]$gateway, [String]$name) {
+    [String] RulePath ([String]$tenant, [String]$gateway, [String]$name) {
         [String]$policy = "${tenant}_Customer_Perimeter_${gateway}_Section01"
-        return $this.ApiGet("infra/domains/default/security-policies/${policy}/rules/${tenant}_pfwpay-${name}_dfw")
+        return "infra/domains/default/security-policies/${policy}/rules/${tenant}_pfwpay-${name}_dfw"
     }
     [Boolean] ResourceExists ([DataPacket]$data_packet) {
         [String]$tenant = $data_packet.tenant
         [String]$name = $data_packet.GetApiConversion([ApiAction]::Create).name
         [String]$gateway = $data_packet.data.gateway -replace '^\S+\s*', ""
         try {
-            switch ($data_packet.resource_config.id) {
-                ([ResourceId]::SecurityGroup) { return $null -ne $this.GetSecurityGroup($tenant, $name)  }
-                ([ResourceId]::Service)       { return $null -ne $this.GetService($tenant, $name)        }
-                ([ResourceId]::Rule)          { return $null -ne $this.GetRule($tenant, $gateway, $name) }
+            [String]$path = switch ($data_packet.resource_config.id) {
+                ([ResourceId]::SecurityGroup) { $this.SecurityGroupPath($tenant, $name)  }
+                ([ResourceId]::Service)       { $this.ServicePath($tenant, $name)        }
+                ([ResourceId]::Rule)          { $this.RulePath($tenant, $gateway, $name) }
             }
+            [Bool]$exists = $null -ne $this.ApiGet($path)
         } catch [System.Net.WebException] {
             if ($_.Exception.Response -and $_.Exception.Response.StatusCode -eq 404) { return $false }
             else { throw $_.Exception }
         }
-        return $false
+        return $exists
     }
 }
