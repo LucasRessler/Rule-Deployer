@@ -2,6 +2,7 @@ using module ".\nsx_api_handle.psm1"
 using module ".\shared_types.psm1"
 using module ".\io_handle.psm1"
 
+# With NSX Image
 function CheckDependenciesFromImg {
     param ([IOHandle]$io_handle, [DataPacket]$failed_packet)
     if ($failed_packet.resource_config.id -ne [ResourceID]::Rule) { return @() }
@@ -48,6 +49,76 @@ function CheckDependeesFromImg {
     return $dependees
 }
 
+function DiagnoseWithImg {
+    param (
+        [IOHandle]$io_handle,
+        [DataPacket]$failed_packet,
+        [ApiAction[]]$failed_actions
+    )
+
+    [Bool]$tried_create = [ApiAction]::Create -in $failed_actions
+    [Bool]$tried_update = [ApiAction]::Update -in $failed_actions
+    [Bool]$tried_delete = [ApiAction]::Delete -in $failed_actions
+    [Bool]$already_exists = $null -ne $io_handle.GetImage($failed_packet.GetImageKeys())
+    [String[]]$missing_depends = CheckDependenciesFromImg $io_handle $failed_packet
+    [String[]]$dependees_found = CheckDependeesFromImg $io_handle $failed_packet $tried_delete
+
+    # Give Feedback
+    [String[]]$faults = @()
+    if (($tried_create -or $tried_update) -and $missing_depends.Count) {
+        $faults += @( # Can only happen for FW Rules
+            "Make sure that all security groups and services used in the rule exist"
+            "It's likely that one or more of the following resources don't exist:"
+            @($missing_depends | ForEach-Object { "- '$_'" })
+            "Note: I can only make statements for resources that were modified with this tool"
+        )
+    }
+    if ($tried_create -and -not $tried_update -and $already_exists) {
+        $faults += @(
+            "The resource was found in the NSX-Image"
+            "It's very likely that it already exists"
+            "You could try updating it instead"
+        )
+    }
+    if ($tried_update -and -not $tried_create -and -not $already_exists) {
+        $faults += @(
+            "The resource was not found in the NSX-Image"
+            "It's likely that it doesn't exist yet"
+            "You could try creating it instead"
+        )
+    }
+    if ($tried_delete -and $dependees_found.Count) {
+        $faults += @( # Can only happen for Security Groups and Services
+            "Make sure that no rules still use this resource"
+            "It's likely that one or more of the following rules still use it:"
+            @($dependees_found | ForEach-Object { "- '$_'" })
+            "Note: I can only make statements for resources that were modified with this tool"
+        )
+    }
+    if ($tried_delete -and -not $already_exists) {
+        $faults += @(
+            "The resource was not found in the NSX-Image"
+            "It's likely that it doesn't exist at all"
+        )
+    }
+    if ($faults.Count -eq 0) {
+        $faults += @(
+            "It's possible that the API has run into a collision"
+            "You could try deploying the request for this resource again"
+            "Note: I can only make statements for resources that were modified with this tool"
+        )
+        if ($tried_create -and -not ($tried_update -or $tried_delete)) {
+            $faults += "The resource may have already been created manually or with a different tool"
+        }
+        if (-not $tried_create -and ($tried_update -or $tried_delete)) {
+            $faults += "The resource may have been removed manually or with a different tool"
+        }
+    }
+    return $faults
+}
+
+
+# With NSX API
 function CheckDependenciesFromApi {
     param ([NsxApiHandle]$nsx_api_handle, [DataPacket]$failed_packet)
     if ($failed_packet.resource_config.id -ne [ResourceId]::Rule) { return @() }
@@ -84,6 +155,60 @@ function CheckDependeesFromApi {
     } | ForEach-Object { $_.id }
 }
 
+function DiagnoseWithApi {
+    param (
+        [NsxApiHandle]$nsx_api_handle,
+        [DataPacket]$failed_packet,
+        [ApiAction[]]$failed_actions
+    )
+
+    [Bool]$tried_create = [ApiAction]::Create -in $failed_actions
+    [Bool]$tried_update = [ApiAction]::Update -in $failed_actions
+    [Bool]$tried_delete = [ApiAction]::Delete -in $failed_actions
+    [Bool]$already_exists = $nsx_api_handle.ResourceExists($failed_packet)
+    [String[]]$missing_depends = CheckDependenciesFromApi $nsx_api_handle $failed_packet
+    [String[]]$dependees_found = CheckDependeesFromApi $nsx_api_handle $failed_packet $tried_delete
+
+    # Give Feedback
+    [String[]]$faults = @()
+    if (($tried_create -or $tried_update) -and $missing_depends.Count) {
+        $faults += @( # Can only happen for FW Rules
+            "The rule depends on these nonexistent resources:"
+            @($missing_depends | ForEach-Object { "- '$_'" })
+        )
+    }
+    if ($tried_create -and -not $tried_update -and $already_exists) {
+        $faults += @(
+            "The resource could not be created because it already exists"
+            "You could try updating it instead"
+        )
+    }
+    if ($tried_update -and -not $tried_create -and -not $already_exists) {
+        $faults += @(
+            "The resource could not be updated because it doesn't exist"
+            "You could try creating it instead"
+        )
+    }
+    if ($tried_delete -and $dependees_found.Count) {
+        $faults += @( # Can only happen for Security Groups and Services
+            "One or more rules still depends on this resource:"
+            @($dependees_found | ForEach-Object { "- '$_'" })
+        )
+    }
+    if ($tried_delete -and -not $already_exists) {
+        $faults += "The resource could not be deleted because it doesn't exist"
+    }
+    if ($faults.Count -eq 0) {
+        $faults += @(
+            "It's possible that the API has run into a collision"
+            "You could try deploying the request for this resource again"
+        )
+    }
+    return $faults
+}
+
+
+# Abstracted Interface
 function DiagnoseFailure {
     param (
         [IOHandle]$io_handle,
@@ -91,98 +216,6 @@ function DiagnoseFailure {
         [ApiAction[]]$failed_actions,
         [NsxApiHandle]$nsx_api_handle
     )
-
-    [Bool]$tried_create = [ApiAction]::Create -in $failed_actions
-    [Bool]$tried_update = [ApiAction]::Update -in $failed_actions
-    [Bool]$tried_delete = [ApiAction]::Delete -in $failed_actions
-
-    [Bool]$tracked = if ($nsx_api_handle) {
-        $nsx_api_handle.ResourceExists($failed_packet)
-    } else {
-        $null -ne $io_handle.GetImage($failed_packet.GetImageKeys())
-    }
-
-    [String[]]$missing_depends = if ($nsx_api_handle) {
-        CheckDependenciesFromApi $nsx_api_handle $failed_packet
-    } else {
-        CheckDependenciesFromImg $io_handle $failed_packet
-    }
-
-    [String[]]$dependees_found = if ($nsx_api_handle) {
-        CheckDependeesFromApi $nsx_api_handle $failed_packet $tried_delete
-    } else {
-        CheckDependeesFromImg $io_handle $failed_packet $tried_delete
-    }
-    
-    # Give feedback
-    switch ($true) {
-        ($tried_create -and $tried_update) {
-            if ($missing_depends.Count) {
-            return @( # Can only happen for FW Rules
-                "Make sure that all security groups and services used in the rule exist"
-                "It's likely that one or more of the following resources don't exist:"
-                @($missing_depends | ForEach-Object { "- '$_'" })
-                "Note: I can only make statements for resources that were modified with this tool"
-            ) } else {
-            return @(
-                "It's possible that the API has run into a collision"
-                "You could try creating or updating the resource again"
-            ) }
-        }
-        ($tried_create) {
-            if ($missing_depends.Count) {
-            return @( # Can only happen for FW Rules
-                "Make sure that all security groups and services used in the rule exist"
-                "It's likely that one or more of the following resources don't exist:"
-                @($missing_depends | ForEach-Object { "- '$_'" })
-                "Note: I can only make statements for resources that were modified with this tool"
-            ) } elseif ($tracked) {
-            return @(
-                "The resource was found in the NSX-Image"
-                "It's very likely that it already exists"
-                "You could try updating it instead"
-            ) } else {
-            return @(
-                "The resource was not found in the NSX-Image"
-                "It's possible that the API has run into a collision"
-                "You could try creating the resource again in this case"
-                "It's also possible that it already exists, if it was created manually or with a different tool"
-                "You could try updating it instead"
-            ) }
-        }
-        ($tried_update) {
-            if (-not $tracked) {
-                "The resource was not found in the NSX-Image"
-                "It's likely that it doesn't exist yet"
-                "You could try creating it instead"
-            } elseif ($missing_depends.Count) {
-            return @( # Can only happen for FW Rules
-                "Make sure that all security groups and services used in the rule exist"
-                "It's likely that one or more of the following resources don't exist:"
-                @($missing_depends | ForEach-Object { "- '$_'" })
-                "Note: I can only make statements for resources that were modified with this tool"
-            ) } else {
-            return @(
-                "The resource was found in the NSX-Image"
-                "It's possible that the API has run into a collision"
-            ) }
-        }
-        ($tried_delete) {
-            if ($dependees_found.Count) {
-            return @( # Can only happen for Security Groups and Services
-                "Make sure that no rules still use this resource"
-                "It's likely that one or more of the following rules still use it:"
-                @($dependees_found | ForEach-Object { "- '$_'" })
-                "Note: I can only make statements for resources that were modified with this tool"
-            ) } elseif ($tracked) {
-            return @(
-                "The resource was found in the NSX-Image"
-                "It's possible that the API has run into a collision"
-            ) } else {
-            return @(
-                "The resource was not found in the NSX-Image"
-                "It's likely that it doesn't exists at all"
-            ) }
-        }
-    }
+    if ($nsx_api_handle) { return DiagnoseWithApi $nsx_api_handle $failed_packet $failed_actions }
+    else { return DiagnoseWithImg $io_handle $failed_packet $failed_actions }
 }
