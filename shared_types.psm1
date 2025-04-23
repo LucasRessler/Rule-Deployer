@@ -17,6 +17,7 @@ class DataPacket {
     [String]$origin_info
     [Int]$row_index
 
+    [Bool]$validated = $false
     [String]$deployment_id = $null
     [Hashtable]$value_origins = @{}
     [Hashtable]$api_conversions = @{}
