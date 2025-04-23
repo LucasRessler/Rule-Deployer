@@ -28,7 +28,12 @@ class NsxApiHandle {
     }
     [String] RulePath ([String]$tenant, [String]$gateway, [String]$name) {
         [String]$policy = "${tenant}_Customer_Perimeter_${gateway}_Section01"
-        return "infra/domains/default/security-policies/${policy}/rules/${tenant}_pfwpay-${name}_dfw"
+        [String]$onset = switch ($gateway) {
+            "Internet" { "pfwinet" }
+            "Payload"  { "pfwpay" }
+            default    { throw "Unknown Gateway" }
+        }
+        return "infra/domains/default/security-policies/${policy}/rules/${tenant}_${onset}-${name}_dfw"
     }
     [String] ResourcePath ([DataPacket]$data_packet) {
         [String]$tenant = $data_packet.tenant
