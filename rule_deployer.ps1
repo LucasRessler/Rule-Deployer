@@ -202,7 +202,7 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
         [DeployBucket[]]$deploy_buckets = @()
         if ($use_smart_actions -and $nsx_api_handle) {
             # If we have NSX Api access, we definitively know which action to take
-            $logger.Info("Checking for existing Resources via NSX Api...")
+            $logger.Info("Checking for existing Resources via NSX API...")
             $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Create))
             $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Update))
             foreach ($data_packet in $to_deploy) {
@@ -228,9 +228,26 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
             $bucket.actions = $generous_actions
         }
 
+        if ($nsx_api_handle) {
+            # Catches things like missing dependencies, dangling references, etc.
+            $logger.Info("Validating Integrity of Resources...")
+            foreach ($bucket in $deploy_buckets) {
+                $bucket.to_deploy = @($bucket.to_deploy | ForEach-Object {
+                    [DataPacket]$unvalidated_packet = $_
+                    [String[]]$faults = ValidateWithNsxApi $nsx_api_handle $unvalidated_packet $bucket.actions
+                    if ($faults.Count) {
+                        [String]$message = Format-Error -Message "Integrity Error at $($unvalidated_packet.origin_info)" -Hints $faults
+                        [String]$short_info = "$actions_info Impossible"
+                        [OutputValue]$val = [OutputValue]::New($message, $short_info, $unvalidated_packet.row_index)
+                        $io_handle.UpdateOutput($_.resource_config, $val)
+                        $logger.Error($message)
+                    } else { $unvalidated_packet.validated = $true; $unvalidated_packet }
+                })
+            }
+        }
+
         [Hashtable]$deploy_params = @{
             deploy_buckets = $deploy_buckets
-            nsx_api_handle = $nsx_api_handle
             io_handle = $io_handle
             api_handle = $api_handle
             summary = $summary

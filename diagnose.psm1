@@ -1,8 +1,9 @@
 using module ".\nsx_api_handle.psm1"
 using module ".\shared_types.psm1"
 using module ".\io_handle.psm1"
+using module ".\utils.psm1"
 
-# With NSX Image
+# Diagnose With NSX Image
 function CheckDependenciesFromImg {
     param ([IOHandle]$io_handle, [DataPacket]$failed_packet)
     if ($failed_packet.resource_config.id -ne [ResourceID]::Rule) { return @() }
@@ -49,7 +50,7 @@ function CheckDependeesFromImg {
     return $dependees
 }
 
-function DiagnoseWithImg {
+function DiagnoseWithNsxImg {
     param (
         [IOHandle]$io_handle,
         [DataPacket]$failed_packet,
@@ -64,11 +65,15 @@ function DiagnoseWithImg {
     [String[]]$dependees_found = CheckDependeesFromImg $io_handle $failed_packet $tried_delete
 
     # Give Feedback
+    [Int]$nmd = $missing_depends.Count
+    [Int]$ndf = $dependees_found.Count
     [String[]]$faults = @()
-    if (($tried_create -or $tried_update) -and $missing_depends.Count) {
+    if (($tried_create -or $tried_update) -and $nmd) {
         $faults += @( # Can only happen for FW Rules
             "Make sure that all security groups and services used in the rule exist"
-            "It's likely that one or more of the following resources don't exist:"
+            "It's likely that $(PluralityIn $nmd `
+                "the following resource doesn't exist:" `
+                "one or more of the following resources don't exist:")"
             @($missing_depends | ForEach-Object { "- $_" })
             "Note: I can only make statements for resources that were modified with this tool"
         )
@@ -87,10 +92,12 @@ function DiagnoseWithImg {
             "You could try creating it instead"
         )
     }
-    if ($tried_delete -and $dependees_found.Count) {
+    if ($tried_delete -and $ndf) {
         $faults += @( # Can only happen for Security Groups and Services
             "Make sure that no rules still use this resource"
-            "It's likely that one or more of the following rules still use it:"
+            "It's likely that $(PluralityIn $ndf `
+                "the following rule still uses it:" `
+                "one or more of the following rules still use it:")"
             @($dependees_found | ForEach-Object { "- $_" })
             "Note: I can only make statements for resources that were modified with this tool"
         )
@@ -118,7 +125,7 @@ function DiagnoseWithImg {
 }
 
 
-# With NSX API
+# Validate with NSX API
 function CheckDependenciesFromApi {
     param ([NsxApiHandle]$nsx_api_handle, [DataPacket]$failed_packet)
     if ($failed_packet.resource_config.id -ne [ResourceId]::Rule) { return @() }
@@ -155,67 +162,51 @@ function CheckDependeesFromApi {
     } | ForEach-Object { $_.id }
 }
 
-function DiagnoseWithApi {
+function ValidateWithNsxApi {
     param (
         [NsxApiHandle]$nsx_api_handle,
-        [DataPacket]$failed_packet,
-        [ApiAction[]]$failed_actions
+        [DataPacket]$data_packet,
+        [ApiAction[]]$actions
     )
 
-    [Bool]$tried_create = [ApiAction]::Create -in $failed_actions
-    [Bool]$tried_update = [ApiAction]::Update -in $failed_actions
-    [Bool]$tried_delete = [ApiAction]::Delete -in $failed_actions
-    [Bool]$already_exists = $nsx_api_handle.ResourceExists($failed_packet)
-    [String[]]$missing_depends = CheckDependenciesFromApi $nsx_api_handle $failed_packet
-    [String[]]$dependees_found = CheckDependeesFromApi $nsx_api_handle $failed_packet $tried_delete
+    [Bool]$tried_create = [ApiAction]::Create -in $actions
+    [Bool]$tried_update = [ApiAction]::Update -in $actions
+    [Bool]$tried_delete = [ApiAction]::Delete -in $actions
+    [Bool]$already_exists = $nsx_api_handle.ResourceExists($data_packet)
+    [String[]]$missing_depends = CheckDependenciesFromApi $nsx_api_handle $data_packet
+    [String[]]$dependees_found = CheckDependeesFromApi $nsx_api_handle $data_packet $tried_delete
 
     # Give Feedback
+    [Int]$nmd = $missing_depends.Count
+    [Int]$ndf = $dependees_found.Count
     [String[]]$faults = @()
-    if (($tried_create -or $tried_update) -and $missing_depends.Count) {
+    if (($tried_create -or $tried_update) -and $nmd) {
         $faults += @( # Can only happen for FW Rules
-            "The rule depends on these nonexistent resources:"
+            "The rule depends on $(PluralityIn $nmd "this nonexistent resource:" "these nonexsitent resources:")"
             @($missing_depends | ForEach-Object { "- $_" })
         )
     }
     if ($tried_create -and -not $tried_update -and $already_exists) {
         $faults += @(
-            "The resource could not be created because it already exists"
+            "The resource can't be created because it already exists"
             "You could try updating it instead"
         )
     }
     if ($tried_update -and -not $tried_create -and -not $already_exists) {
         $faults += @(
-            "The resource could not be updated because it doesn't exist"
+            "The resource can't be updated because it doesn't exist"
             "You could try creating it instead"
         )
     }
-    if ($tried_delete -and $dependees_found.Count) {
+    if ($tried_delete -and $ndf) {
         $faults += @( # Can only happen for Security Groups and Services
-            "The following rules still depend on this resource:"
+            "The following rule$(PluralityIn $ndf) still depend$(PluralityIn $ndf "s" $null) on this resource:"
             @($dependees_found | ForEach-Object { "- $_" })
         )
     }
     if ($tried_delete -and -not $already_exists) {
-        $faults += "The resource could not be deleted because it doesn't exist"
+        $faults += "The resource can't be deleted because it doesn't exist"
     }
-    if ($faults.Count -eq 0) {
-        $faults += @(
-            "It's possible that the API has run into a collision"
-            "You could try deploying the request for this resource again"
-        )
-    }
+
     return $faults
-}
-
-
-# Abstracted Interface
-function DiagnoseFailure {
-    param (
-        [IOHandle]$io_handle,
-        [DataPacket]$failed_packet,
-        [ApiAction[]]$failed_actions,
-        [NsxApiHandle]$nsx_api_handle
-    )
-    if ($nsx_api_handle) { return DiagnoseWithApi $nsx_api_handle $failed_packet $failed_actions }
-    else { return DiagnoseWithImg $io_handle $failed_packet $failed_actions }
 }
