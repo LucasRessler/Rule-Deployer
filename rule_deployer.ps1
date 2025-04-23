@@ -237,7 +237,7 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
                     [String[]]$faults = ValidateWithNsxApi $nsx_api_handle $unvalidated_packet $bucket.actions
                     if ($faults.Count) {
                         [String]$message = Format-Error -Message "Integrity Error at $($unvalidated_packet.origin_info)" -Hints $faults
-                        [String]$short_info = "$actions_info Impossible"
+                        [String]$short_info = "$actions_info Not Possible"
                         [OutputValue]$val = [OutputValue]::New($message, $short_info, $unvalidated_packet.row_index)
                         $io_handle.UpdateOutput($_.resource_config, $val)
                         $logger.Error($message)
