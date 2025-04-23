@@ -144,7 +144,6 @@ function AwaitSingleBucket {
 function DeployAndAwaitBuckets {
     param (
         [DeployBucket[]]$deploy_buckets,
-        [NsxApiHandle]$nsx_api_handle,
         [ApiHandle]$api_handle,
         [IoHandle]$io_handle,
         [Hashtable]$summary,
@@ -185,8 +184,11 @@ function DeployAndAwaitBuckets {
         [String]$requests_str = "$actions_str-request$(PluralityIn $bucket.actions.Length)"
         foreach ($failed_packet in $bucket.to_deploy) {
             [String]$short_info = "$actions_str Failed"
-            [String]$message = Format-Error -Message "$requests_str for resource at $($failed_packet.origin_info) failed" `
-                -Hints (DiagnoseFailure $io_handle $failed_packet $bucket.actions $nsx_api_handle)
+            [String]$hints = if ($failed_packet.validated) { @(
+                "It's possible the API has run into a collision"
+                "You could try deploying the request for this resource again"
+            ) } else { DiagnoseWithNsxImg $io_handle $failed_packet $bucket.actions }
+            [String]$message = Format-Error -Message "$requests_str for resource at $($failed_packet.origin_info) failed" -Hints $hints
             [OutputValue]$val = [OutputValue]::New($message, $short_info, $failed_packet.row_index)
             $io_handle.UpdateOutput($failed_packet.resource_config, $val)
             $logger.Error($message)
