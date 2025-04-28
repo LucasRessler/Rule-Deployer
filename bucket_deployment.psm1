@@ -184,7 +184,7 @@ function DeployAndAwaitBuckets {
         [String]$requests_str = "$actions_str-request$(PluralityIn $bucket.actions.Length)"
         foreach ($failed_packet in $bucket.to_deploy) {
             [String]$short_info = "$actions_str Failed"
-            [String]$hints = if ($failed_packet.validated) { @(
+            [String[]]$hints = if ($failed_packet.validated) { @(
                 "It's possible the API has run into a collision"
                 "You could try deploying the request for this resource again"
             ) } else { DiagnoseWithNsxImg $io_handle $failed_packet $bucket.actions }
