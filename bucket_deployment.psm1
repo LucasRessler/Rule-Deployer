@@ -56,7 +56,6 @@ function DeploySingleBucket {
         [Logger]$logger
     )
 
-    $bucket.deployed = @()
     [ApiAction]$action = $bucket.GetCurrentAction()
     [Int]$num_to_deploy = $bucket.to_deploy.Count
     if ($num_to_deploy -eq 0) { return 0 }
@@ -68,9 +67,8 @@ function DeploySingleBucket {
     }
 
     $logger.Info("Deploying $num_to_deploy ${action}-request$(PluralityIn $num_to_deploy)...")
-    for ($i = 0; $i -lt $num_to_deploy; $i++) {
-        ShowPercentage $i $num_to_deploy
-        [DataPacket]$data_packet = $bucket.to_deploy[$i]
+    $bucket.deployed = $bucket.to_deploy | ForEachWithPercentage {
+        param ([DataPacket]$data_packet)
         [Hashtable]$resource_config = $data_packet.resource_config
         [Hashtable]$inputs = $data_packet.GetApiConversion($action)
         [String]$name = $data_packet.GetApiConversion([ApiAction]::Create).name
@@ -80,7 +78,7 @@ function DeploySingleBucket {
         try {
             $logger.Debug("Deploying $action-request for $($data_packet.origin_info) over tenant $($data_packet.tenant): '$deployment_name'")
             $data_packet.deployment_id = $api_handle.Deploy($deployment_name, $data_packet.tenant, $resource_config.catalog_id, $inputs)
-            $bucket.deployed += $data_packet
+            $data_packet
         } catch {
             [String]$short_info = "Deployment Failed"
             [String]$message = "Deploy error at $($data_packet.origin_info): $($_.Exception.Message)"
@@ -106,16 +104,14 @@ function AwaitSingleBucket {
         [Logger]$logger
     )
 
-    $bucket.to_deploy = @()
     [ApiAction]$action = $bucket.GetCurrentAction()
     [String]$action_verb = "$action".ToLower()
     [Int]$num_deployed = $bucket.deployed.Count
     if ($num_deployed -eq 0) { return 0 }
 
     $logger.Info("Waiting for status of $num_deployed $action-request$(PluralityIn $num_deployed)...")
-    for ($i = 0; $i -lt $num_deployed; $i++) {
-        ShowPercentage $i $num_deployed
-        [DataPacket]$deployment = $bucket.deployed[$i]
+    $bucket.to_deploy = $bucket.deployed | ForEachWithPercentage {
+        param ([DataPacket]$deployment)
         [Hashtable]$resource_config = $deployment.resource_config
         [DeploymentStatus]$status = $api_handle.WaitForDeployment($deployment.deployment_id)
 
@@ -132,7 +128,7 @@ function AwaitSingleBucket {
             $io_handle.UpdateNsxImage($image, $action)
         } else {
             $logger.Debug("Deployment for resource at $($deployment.origin_info) finished with status Failed")
-            $bucket.to_deploy += $deployment
+            $deployment
         }
     }
 
