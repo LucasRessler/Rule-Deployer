@@ -208,7 +208,7 @@ class JsonHandle : IOHandle {
     [DataPacket[]] GetResourceData ([Hashtable]$resource_config) {
         return @($this.input_data.Keys | ForEach-Object {
             [String]$tenant = $_
-            [String]$origin_info_base = "'$tenant'.'$($resource_config.field_name)'"
+            [String]$origin_info_base = "$tenant.$($resource_config.field_name)"
             $raw = $this.input_data[$tenant][$resource_config.field_name]
             if ($raw) { CollapseNested $raw $resource_config.json_nesting `
             | ForEach-Object { 
