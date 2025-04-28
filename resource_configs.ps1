@@ -152,7 +152,7 @@ function Get-RulesConfig ([Hashtable]$config) {
             services = @{
                 dbg_name = "NSX-Service"
                 regex_info = "Please use a Service Name or 'any'"
-                regex = $config.regex.group_name
+                regex = $config.regex.service_reference
                 is_array = $true
                 postparser = { param($value) ParseArrayWithAny $value }
                 subparser = {
