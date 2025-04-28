@@ -5,8 +5,8 @@ using module ".\utils.psm1"
 
 # Diagnose With NSX Image
 function CheckDependenciesFromImg {
-    param ([IOHandle]$io_handle, [DataPacket]$failed_packet)
-    if ($failed_packet.resource_config.id -ne [ResourceID]::Rule) { return @() }
+    param ([IOHandle]$io_handle, [DataPacket]$failed_packet, [Bool]$tried_delete)
+    if ($tried_delete -or $failed_packet.resource_config.id -ne [ResourceID]::Rule) { return @() }
     [String[]]$missing_depends = @()
     [String]$tenant = $failed_packet.tenant
     foreach ($used_service in $failed_packet.data["services"]) {
@@ -72,8 +72,8 @@ function DiagnoseWithNsxImg {
         $faults += @( # Can only happen for FW Rules
             "Make sure that all security groups and services used in the rule exist"
             "It's likely that $(PluralityIn $nmd `
-                "the following resource doesn't exist:" `
-                "one or more of the following resources don't exist:")"
+                "the following resource doesn't" `
+                "one or more of the following resources don't") exist:"
             @($missing_depends | ForEach-Object { "- $_" })
             "Note: I can only make statements for resources that were modified with this tool"
         )
@@ -96,8 +96,8 @@ function DiagnoseWithNsxImg {
         $faults += @( # Can only happen for Security Groups and Services
             "Make sure that no rules still use this resource"
             "It's likely that $(PluralityIn $ndf `
-                "the following rule still uses it:" `
-                "one or more of the following rules still use it:")"
+                "the following rule still uses" `
+                "one or more of the following rules still use") it:"
             @($dependees_found | ForEach-Object { "- $_" })
             "Note: I can only make statements for resources that were modified with this tool"
         )
@@ -127,13 +127,16 @@ function DiagnoseWithNsxImg {
 
 # Validate with NSX API
 function CheckDependenciesFromApi {
-    param ([NsxApiHandle]$nsx_api_handle, [DataPacket]$failed_packet)
-    if ($failed_packet.resource_config.id -ne [ResourceId]::Rule) { return @() }
+    param ([NsxApiHandle]$nsx_api_handle, [DataPacket]$failed_packet, [Bool]$try_delete)
+    if ($try_delete -or $failed_packet.resource_config.id -ne [ResourceId]::Rule) { return @() }
     [String[]]$missing_depends = @()
     [String]$tenant = $failed_packet.tenant
     foreach ($used_service in $failed_packet.data["services"]) {
-        [DataPacket]$service_dp = [DataPacket]::New(@{ name = $used_service }, @{ id = [ResourceId]::Service }, $tenant, $null)
-        if (-not $nsx_api_handle.ResourceExists($service_dp)) { $missing_depends += "$used_service (Service)" }
+        [Bool]$exists = if (-not $used_service.Contains(" ")) {
+            [DataPacket]$service_dp = [DataPacket]::New(@{ name = $used_service }, @{ id = [ResourceId]::Service }, $tenant, $null)
+            $nsx_api_handle.ResourceExists($service_dp) -or $nsx_api_handle.DefaultServiceExists($used_service)
+        } else { $nsx_api_handle.DefaultServiceExists($used_service) }
+        if (-not $exists) { $missing_depends += "$used_service (Service)" }
     }
     foreach ($used_source in $failed_packet.data["sources"]) {
         [DataPacket]$source_dp = [DataPacket]::New(@{ name = $used_source }, @{ id = [ResourceId]::SecurityGroup }, $tenant, $null)
@@ -147,8 +150,8 @@ function CheckDependenciesFromApi {
 }
 
 function CheckDependeesFromApi {
-    param ([NsxApiHandle]$nsx_api_handle, [DataPacket]$failed_packet, [Bool]$tried_delete)
-    if (-not $tried_delete -or $failed_packet.resource_config.id -eq [ResourceId]::Rule) { return @() }
+    param ([NsxApiHandle]$nsx_api_handle, [DataPacket]$failed_packet, [Bool]$try_delete)
+    if (-not $try_delete -or $failed_packet.resource_config.id -eq [ResourceId]::Rule) { return @() }
     [String]$dependency_path = "/" + $nsx_api_handle.ResourcePath($failed_packet)
     [String]$payload_rules_path = $nsx_api_handle.RulePath($failed_packet.tenant, "Payload", "")   -replace '[^/]+$', ""
     [String]$internet_rules_path = $nsx_api_handle.RulePath($failed_packet.tenant, "Internet", "") -replace '[^/]+$', ""
@@ -169,42 +172,42 @@ function ValidateWithNsxApi {
         [ApiAction[]]$actions
     )
 
-    [Bool]$tried_create = [ApiAction]::Create -in $actions
-    [Bool]$tried_update = [ApiAction]::Update -in $actions
-    [Bool]$tried_delete = [ApiAction]::Delete -in $actions
+    [Bool]$try_create = [ApiAction]::Create -in $actions
+    [Bool]$try_update = [ApiAction]::Update -in $actions
+    [Bool]$try_delete = [ApiAction]::Delete -in $actions
     [Bool]$already_exists = $nsx_api_handle.ResourceExists($data_packet)
-    [String[]]$missing_depends = CheckDependenciesFromApi $nsx_api_handle $data_packet
-    [String[]]$dependees_found = CheckDependeesFromApi $nsx_api_handle $data_packet $tried_delete
+    [String[]]$dependees_found = CheckDependeesFromApi $nsx_api_handle $data_packet $try_delete
+    [String[]]$missing_depends = CheckDependenciesFromApi $nsx_api_handle $data_packet $try_delete
 
     # Give Feedback
     [Int]$nmd = $missing_depends.Count
     [Int]$ndf = $dependees_found.Count
     [String[]]$faults = @()
-    if (($tried_create -or $tried_update) -and $nmd) {
+    if (($try_create -or $try_update) -and $nmd) {
         $faults += @( # Can only happen for FW Rules
-            "The rule depends on $(PluralityIn $nmd "this nonexistent resource:" "these nonexsitent resources:")"
+            "The rule depends on $(PluralityIn $nmd "this nonexistent resource" "these nonexsitent resources"):"
             @($missing_depends | ForEach-Object { "- $_" })
         )
     }
-    if ($tried_create -and -not $tried_update -and $already_exists) {
+    if ($try_create -and -not $try_update -and $already_exists) {
         $faults += @(
             "The resource can't be created because it already exists"
             "You could try updating it instead"
         )
     }
-    if ($tried_update -and -not $tried_create -and -not $already_exists) {
+    if ($try_update -and -not $try_create -and -not $already_exists) {
         $faults += @(
             "The resource can't be updated because it doesn't exist"
             "You could try creating it instead"
         )
     }
-    if ($tried_delete -and $ndf) {
+    if ($try_delete -and $ndf) {
         $faults += @( # Can only happen for Security Groups and Services
-            "The following rule$(PluralityIn $ndf) still depend$(PluralityIn $ndf "s" $null) on this resource:"
+            "The following $(PluralityIn $ndf "rule still depends" "rules still depend") on this resource:"
             @($dependees_found | ForEach-Object { "- $_" })
         )
     }
-    if ($tried_delete -and -not $already_exists) {
+    if ($try_delete -and -not $already_exists) {
         $faults += "The resource can't be deleted because it doesn't exist"
     }
 
