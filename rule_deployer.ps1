@@ -44,20 +44,18 @@ function GetAndParseResourceData {
     if ($num_data -eq 0) { $logger.Info("No data found!"); return }
 
     # Parse Data
-    [Hashtable]$unique_check_map = @{}
-    [DataPacket[]]$to_deploy = @()
     $logger.section = "Parse"
     $logger.Info("Parsing data for $num_data resource$(PluralityIn $num_data)...")
-    for ($i = 0; $i -lt $num_data; $i++) {
-        ShowPercentage $i $num_data
-        [DataPacket]$data_packet = $intermediate_data[$i]
+    [Hashtable]$unique_check_map = @{}
+    [DataPacket[]]$to_deploy = $intermediate_data | ForEachWithPercentage {
+        param ([DataPacket]$data_packet)
         $parse_intermediate_params = @{
             only_deletion = -not ([ApiAction]::Create -in $actions -or [ApiAction]::Update -in $actions)
             data_packet = $data_packet
             unique_check_map = $unique_check_map
             logger = $logger
         }
-        try { $to_deploy += ParseIntermediate @parse_intermediate_params }
+        try { ParseIntermediate @parse_intermediate_params }
         catch {
             [String]$err_message = $_.Exception.Message
             [String]$short_info = $err_message.Split([System.Environment]::NewLine)[0].Split(":")[0]
@@ -67,7 +65,7 @@ function GetAndParseResourceData {
             $logger.Error($message)
         }
     }
-
+    
     $logger.Info("$($to_deploy.Count)/$num_data parsed successfully$(Punctuate $to_deploy.Count $num_data)")
     $summary[$resource_config.resource_name]["parsed"] = $to_deploy.Count
     return $to_deploy
@@ -230,10 +228,11 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
 
         if ($nsx_api_handle) {
             # Catches issues like missing dependencies, dangling references, etc.
+            $logger.section = "Validate"
             $logger.Info("Validating Integrity of Resources...")
             foreach ($bucket in $deploy_buckets) {
-                $bucket.to_deploy = @($bucket.to_deploy | ForEach-Object {
-                    [DataPacket]$unvalidated_packet = $_
+                $bucket.to_deploy = $bucket.to_deploy | ForEachWithPercentage {
+                    param ([DataPacket]$unvalidated_packet)
                     [String[]]$faults = ValidateWithNsxApi $nsx_api_handle $unvalidated_packet $bucket.actions
                     if ($faults.Count) {
                         [String]$message = Format-Error -Message "Integrity error at $($unvalidated_packet.origin_info)" -Hints $faults
@@ -242,7 +241,7 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
                         $io_handle.UpdateOutput($_.resource_config, $val)
                         $logger.Error($message)
                     } else { $unvalidated_packet.validated = $true; $unvalidated_packet }
-                })
+                }
             }
         }
 
@@ -259,13 +258,14 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
 
     # Cleanup
     [Int]$ret = 0; [Int]$total = 0; [Int]$parsed = 0; [Int]$successful = 0
+    [String]$performed_actions = Format-List ($actions | ForEach-Object { "${_}d".ToLower() }) "or"
     [String[]]$summaries = $summary.Keys | ForEach-Object {
         $total += [Int]$summary[$_].total; $parsed += [Int]$summary[$_].parsed; $successful += [Int]$summary[$_].successful
         "$([Int]($summary[$_].successful))/$($summary[$_].total) $_$(PluralityIn $summary[$_].total)"
     }
 
     $logger.section = "Cleanup"; PrintDivider
-    $logger.Info("$(Format-List $summaries) ${actions_info}d successfully.")
+    $logger.Info("$(Format-List $summaries) $performed_actions successfully.")
     $logger.Info("Releasing IO-Handle..."); $io_handle.Release()
     $logger.Info("Saving Logs..."); $logger.Save($LogPath)
 
