@@ -29,8 +29,8 @@ class NsxApiHandle {
     [String] RulePath ([String]$tenant, [String]$gateway, [String]$name) {
         [String]$policy = "${tenant}_Customer_Perimeter_${gateway}_Section01"
         [String]$onset = switch ($gateway) {
-            "Internet" { "pfwinet" }
             "Payload"  { "pfwpay" }
+            "Internet" { "pfwinet" }
             default    { throw "Unknown Gateway" }
         }
         return "infra/domains/default/security-policies/${policy}/rules/${tenant}_${onset}-${name}_dfw"
@@ -45,6 +45,11 @@ class NsxApiHandle {
             ([ResourceId]::Rule)          { return $this.RulePath($tenant, $gateway, $name) }
         }
         return $null
+    }
+    [Boolean] DefaultServiceExists ([String]$service_name) {
+        [PSCustomObject[]]$matches = $this.ApiGet("infra/services").results `
+        | Where-Object { $_.is_default -and $_.display_name -eq $service_name }
+        return $matches.Count -gt 0
     }
     [Boolean] ResourceExists ([DataPacket]$data_packet) {
         try { return $null -ne $this.ApiGet($this.ResourcePath($data_packet)) }
