@@ -4,11 +4,11 @@ function Join ([Object[]]$arr, [String]$delim) {
     return $s
 }
 
-function Format-List ([Object[]]$arr) {
+function Format-List ([Object[]]$arr, [String]$con = "and") {
     [Int]$end = $arr.Count - 1
     [Int]$part_end = [Math]::Max(0, $arr.Count - 2)
     [String]$part = if ($end -gt 0) { Join $arr[0..$part_end] ", " }
-    return Join @($part, $arr[$arr.Count - 1]) " and "
+    return Join @($part, $arr[$arr.Count - 1]) " $con "
 }
 
 function Format-Error {
@@ -23,7 +23,24 @@ function PrintDivider {
 }
 
 function ShowPercentage ([Int]$i, [Int]$total) {
-    Write-Host -NoNewline "...$([Math]::Floor(($i * 100 + 50) / $total))%`r"
+}
+
+function ForEachWithPercentage {
+    param (
+        [Parameter(Mandatory, ValueFromPipeline)]
+        $InputObject,
+        [Parameter(Mandatory, Position = 0)]
+        [scriptBlock]$Process
+    )
+    begin { [Array]$items = @() }
+    process { $items += $InputObject }
+    end {
+        [Int]$count = $items.count
+        for ($i = 0; $i -lt $count; $i++) {
+            Write-Host -NoNewline "...$([Math]::Floor(($i * 100 + 50) / $count))%`r"
+            & $Process $items[$i]
+        }
+    }
 }
 
 function PluralityIn ([Int]$number, [String]$singular = "", [String]$plural = "s") {
@@ -99,7 +116,7 @@ function CollapseNested ($nested_obj, [String[]]$keys) {
         $result = @()
         foreach ($val in $nested_obj.Keys) {
             $collapsed = CollapseNested $nested_obj[$val] $keys[1..$keys.Count]
-            try { $result += $collapsed | ForEach-Object { $_[$keys[0]] = $val; $_["__o"] = ".'$val'$($_["__o"])"; $_ } }
+            try { $result += $collapsed | ForEach-Object { $_[$keys[0]] = $val; $_["__o"] = ".${val}$($_["__o"])"; $_ } }
             catch { return $nested_obj }
         }
         return $result
