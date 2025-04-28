@@ -57,6 +57,7 @@ function Get-Config ([String]$conf_path) {
             }
         }
         regex = @{
+            service_reference = "[A-Za-z0-9 _.-]+"
             group_name = "[A-Za-z0-9_.-]+"
             request_id = "[A-Za-z]+\d+"
             ip_addr = $regex_ip
