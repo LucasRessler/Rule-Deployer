@@ -1,229 +1,318 @@
 # Rule Deployer
 The Rule Deployer is a T-Systems in-house tool for faster deployment of NSX Security Groups, Services and Firewall Rules specific to FCI.
-The input data is provided either using JSON or via a centraliced Excel sheet, parsed, converted to API-calls and deployed.
-Unfortunately, the API currently lacks bulk request support, requiring sequential deployment, which may increase the time needed.
+The input data is provided via either inline JSON-input or an Excel sheet, parsed, checked, converted to API-calls and deployed.
+Unfortunately, the API currently lacks bulk request support, requiring sequential deployment, which may increase the time needed. 
 
 # Usage
 
 # Config
 
-# Input
-The Rule Deployer can receive input in JSON-format over the `-InlineJson` parameter.
-If this parameter is not set, it will instead attempt to get input from an Excel file.
-The path to the Excel file can be set in the [Config](#Config).
 
-## Excel Input
-The Excel file is structured into 3 worksheets,
-one for each resource that Rule Deployer can work with:
-- **Security Groups**
-- **Services**
-- **Rules**
+## Input with `-InlineJson`
+Rule Deployer accepts JSON-formatted input via the `-InlineJson` parameter.
+This input defines the resources to be deployed, grouped by tenant.
 
-The exact names of these worksheets can be set in the [Config](#Config).
+### JSON Structure Overview
+At the top level, the JSON should define one or more **tenant names** as keys.
+Each tenant maps to an object that may contain one or more of the following resource group fields:
+- `security_groups`
+- `services`
+- `rules`
 
-### General
-Most fields must conform to a specified format, detailed in the field descriptions below.  
-Some fields are **optional**, as noted explicitly in their descriptions.  
-Some fields can contain **multiple values**, as noted explicitly in their descriptions.
-Separate values by using multiple lines in the same cell.
-In Excel, this is achieved by pressing `Alt + Enter` while editing a cell.
+> **Note:** If you are using the `-Tenant` parameter, you must not include tenants within the JSON. In that case, the JSON is assumed to directly define the resource groups, and Rule Deployer will automatically wrap them with the tenant specified via `-Tenant`.
 
-#### Output
-Each sheet's last column is reserved for Rule Deployer's output.
-> **IMPORTANT:** Rule Deployer only processes rows with an empty output cell
+### Supported JSON Formats
+Rule Deployer supports two main formats for JSON input:
 
-**Possible output states:**
-- **Parse Error**  
-  `Missing Group Name`, `Invalid IP-Address`, `Duplicate NSX-Index`, etc.  
-  The input doesn't meet format specifications.  
-  The output state `Multiple Faults` is set when the parser has found problems in multiple cells.
-- **Deploy Error**  
-  `Deploy Error`  
-  The connection to the server failed, or the server rejected the API call.  
-  If the latter is ever the case, there might be a bug in the parsing or conversion logic;
-  Please report any problematic input!
-- **Action Successful**  
-  `Created Successfully`, `Updated Successfully`, `Deleted Successfully`  
-  The action completed successfully for the provided data.
-- **Action(s) Failed**  
-  `Create Failed`, `Create/Update Failed`, `Delete Failed`, etc.  
-  All queued actions failed for the provided data.  
-  Refer to [Usage/Failed Actions](#FailedActions).
+### **1. Flat Format**
+In the flat format, each resource group (`security_groups`, `services`, `rules`) contains an **array of objects**.
+Each object represents a resource.
 
-It is possible for a Firewall Rule to be deployed on two separate gateways and to result in two different output states.
-In this case, the output messages will be comma separated in the order that the gateways appear in the Excel sheet.  
-For example: `Updated Successfully, Create/Update Failed`
+#### Example (Flat Format)
+```json
+{
+  "t001": {
+    "security_groups": [
+      {
+        "name": "secgroup_name1",
+        "ip_addresses": ["10.0.0.1", "10.0.0.20/24"],
+        "hostname": ["hostname1"],
+        "comment": "description...",
+        "request_id": "SCTASK01234567",
+        "update_requests": ["SCTASK01234568"]
+      }
+    ],
+    "services": [
+      {
+        "name": "service_name1",
+        "ports": ["tcp:123", "tcp:124-126", "udp:321"],
+        "comment": "description...",
+        "request_id": "SCTASK01234567",
+        "update_requests": ["SCTASK01234568"]
+      }
+    ],
+    "rules": [
+      {
+        "gateway": ["T0 Internet"],
+        "request_id": "SCTASK01234567",
+        "index": "1",
+        "sources": ["secgroup_name1"],
+        "destinations": ["secgroup_name1"],
+        "services": ["service_name1"],
+        "comment": "description...",
+        "update_requests": ["SCTASK01234568"]
+      }
+    ]
+  }
+}
+```
 
-### Security Groups
+### **2. Nested Format**
+The nested format uses **objects instead of arrays**, where each key corresponds to the resource's name (or ID) and maps to its properties.
+- `security_groups` and `services` use **resource names as keys**.
+- `rules` are organized first by **gateway**, then by **request ID**, then by **index**.
+
+#### Example (Nested Format)
+```json
+{
+  "t001": {
+    "security_groups": {
+      "secgroup_name1": {
+        "ip_addresses": ["10.0.0.1", "10.0.0.20/24"],
+        "hostname": ["hostname1"],
+        "comment": "description...",
+        "request_id": "SCTASK01234567",
+        "update_requests": ["SCTASK01234568"]
+      }
+    },
+    "services": {
+      "service_name1": {
+        "ports": ["tcp:123", "tcp:124-126", "udp:321"],
+        "comment": "description...",
+        "request_id": "SCTASK01234567",
+        "update_requests": ["SCTASK01234568"]
+      }
+    },
+    "rules": {
+      "T0 Internet": {
+        "SCTASK01234567": {
+          "1": {
+            "sources": ["secgroup_name1"],
+            "destinations": ["secgroup_name1"],
+            "services": ["service_name1"],
+            "comment": "description...",
+            "update_requests": ["SCTASK01234568"]
+          }
+        }
+      }
+    }
+  }
+}
+
+```
+
+### Notes
+- Rule names are generated automatically in the format: `<request_id>_<index>_Auto`.
+- For `rules`, if no `gateway` is provided, the default is `"T1 Payload"`.
+- Both input formats are functionally equivalent. Choose the one that best fits your workflow or data source.
+
+
+# Input with `ExcelFilePath`
+Input can alternatively be provided with an Excel file with the `ExcelFilePath` parameter.
+This file should contain 3 worksheets for the 3 different resource types:
+- SecurityGroups
+- Services
+- Rules
+
+The names of these Worksheets can be configured with the `excel_sheetnames` field in the config file.
+```jsonc
+{
+    "excel_sheetnames": {
+        "security_groups": "My-SecurityGroups-Worksheet",
+        "services": "My-Services-Worksheet",
+        "rules": "My-Rules-Worksheet"
+    },
+    // [...]
+}
+```
+
+In the following sections, each of the worksheets will be described in detail.  
+The headers for each worksheet are required, but the column titles don't have to follow the naming scheme described here.
+
+## The SecurityGroups Worksheet
 **Layout and Examples:**
-| Security Group Name | IP-Address                    | Hostname   | Comment                   | NSX-Servicerequest             | Output   |
-| ------------------- | ----------------------------- | ---------- | ------------------------- | ------------------------------ | -------- |
-| net-ABC-prod        | 10.250.10.1                   |            |                           |                                |          | 
-| ip_Cust-Clients     | 10.250.10.2/24                | hstabc0123 | Comment can be any string | SCTASK0001234                  |          |
-| ip_CBA-servers-all  | 10.250.10.3<br>10.250.10.1/24 | hstxyz43   | Comment can be any string | SCTASK0001234<br>SCTASK0001235 |          |
- 
-- #### Security Group Name
+| Security Group Name | IP-Addresses                  | Hostname   | Security Group Comment    | Request ID                     | Output |
+| ------------------- | ----------------------------- | ---------- | ------------------------- | ------------------------------ | ------ |
+| net-ABC-prod        | 10.250.10.1                   |            |                           |                                |        | 
+| ip_Cust-Clients     | 10.250.10.2/24                | hstabc0123 | Comment can be any string | SCTASK0001234                  |        |
+| ip_CBA-servers-all  | 10.250.10.3<br>10.250.10.1/24 | hstxyz43   | Comment can be any string | SCTASK0001234<br>SCTASK0001235 |        |
+
+- ### Security Group Name
   The name of the Security Group.
 
-  - **Value Format:** String of lowercase or uppercase letters (a-z), numbers, and these symbols: `.`, `-`, `_`
+  - **Value Format:** String of lowercase or uppercase letters (a-z), numbers, and these symbols: `-`, `_`, `.`
   - This field is **required**
   - This field can only contain **one value**
   - This field's value should be **unique**
 
-- #### IP-Address
-  The ip-addresses that constitute the Security Group.
+
+- ### IP-Addresses
+  The IP-addresses that constitute the Security Group.
 
   - **Value Format:** IPv4-address, with or without network part  
     `<ipv4>` | `<ipv4>/<net>`
   - **Examples:** `1.2.3.4`, `1.2.3.4/24`
-  - This field is **required**
-  - This field can contain **multiple values**
+  - This field is **required** for Create and Update requests
+  - This field may contain **multiple values**, separated by linebreaks (Alt + Enter) within the cell  
 
-- #### Hostname
-  The hostnames associated with the Security Group.  
+- ### Hostname
+  Hostnames associated with the Security Group.  
   They will be added to the resource description.
 
   - **Value Format:** Any string
   - This field is **optional**
-  - This field can contain **multiple value**
+  - This field may contain **multiple values**, separated by linebreaks (Alt + Enter) within the cell  
 
-- #### Comment
-  A comment or description of the Security Group.  
+- ### Security Group Comment
+  A comment about or description of the Security Group.  
   It will be added to the resource description.
 
   - **Value Format:** Any string
   - This field is **optional**
   - This field can only contain **one value**
 
-- #### NSX-Servicerequest
-  Servicerequest IDs associated with the Security Group.
+- ### Request ID
+  Request IDs associated with the Security Group.  
   They will be added to the resource description.
 
-  - **Value Format:** String of letters (a-z) followed by a string of numbers  
-    Example: `SCTASK0000000`
+  - **Value Format:** String of lowercase or uppercase letters (a-z) followed by a string of numbers
+  - **Examples:** `SCTASK01234567`, `INC01234567`
   - This field is **optional**
-  - This field can contain **multiple values**
+  - This field may contain **multiple values**, separated by linebreaks (Alt + Enter) within the cell  
+    The first value will be interpreted as the initial Request ID  
+    Any other values will be interpreted as update Request IDs
 
-### Services
+
+## The Services Worksheet
 **Layout and Examples:**
-| Service Name | Port                              | Comment                   | NSX-Servicerequest             | Output   |
-| ------------ | --------------------------------- | ------------------------- | ------------------------------ | -------- |
-| x-DEF        | tcp:50                            |                           |                                |          | 
-| x1_GHI       | upd:100-140                       | Comment can be any string | SCTASK0001235                  |          | 
-| x1_JKL       | upd:100<br>tcp:200-210<br>tcp:220 | Comment can be any string | SCTASK0001236<br>SCTASK0001235 |          |
+| Service Name | Ports                             | Service Comment           | Request ID                     | Output |
+| ------------ | --------------------------------- | ------------------------- | ------------------------------ | ------ |
+| x-DEF        | tcp:50                            |                           |                                |        | 
+| x1_GHI       | upd:100-140                       | Comment can be any string | SCTASK0001235                  |        | 
+| x1_JKL       | upd:100<br>tcp:200-210<br>tcp:220 | Comment can be any string | SCTASK0001236<br>SCTASK0001235 |        |
 
-- #### Service Name
+- ### Service Name
   The name of the Service.
 
-  - **Value Format:** String of lowercase or uppercase letters (a-z), numbers, and these symbols: `.`, `-`, `_` 
+  - **Value Format:** String of lowercase or uppercase letters (a-z), numbers, and these symbols: `-`, `_`, `.`
   - This field is **required**
   - This field can only contain **one value**
   - This field's value should be **unique**
 
-- #### Port
-  The ports / port-ranges that constitute the Service.
+- ### Ports
+  The ports and/or port-ranges that constitute the Service.
 
-  - **Value Format:** Protocol:Port or Protocol:Port-range pair  
+  - **Value Format:** Protocol:Port or Protocol:Port-range  
     `<protocol>:<port>` | `<protocol>:<port-start>-<port-end>`  
     Supported protocols are `tcp` and `udp`  
+    For the protocol-part, lowercase and uppercase letters both work  
     `icmp` is not supported; Please use default ICMP Services (i.e. 'ICMP ALL' or 'ICMP Echo Request'), instead of creating a custom one!
   - **Examples:** `tcp:100`, `udp:120-130`
-  - This field is **required** for creation and updates
-  - This field can contain **multiple values**
+  - This field is **required** for Create and Update requests
+  - This field may contain **multiple values**, separated by linebreaks (Alt + Enter) within the cell  
 
-- #### Comment
-  A comment or description of the Service.
+- ### Service Comment
+  A comment about or description of the Service.  
   It will be added to the resource description.
 
 - **Value Format:** Any string
   - This field is **optional**
   - This field can only contain **one value**
 
-- #### NSX-Servicerequest
-  Servicerequest IDs associated with the Service.
+- ### Request ID
+  Request IDs associated with the Service.  
   They will be added to the resource description.
 
-  - **Value Format:** String of letters (a-z) followed by a string of numbers  
-    Example: `SCTASK0000000`
+  - **Value Format:** String of lowercase or uppercase letters (a-z) followed by a string of numbers
+  - **Examples:** `SCTASK01234567`, `INC01234567`
   - This field is **optional**
-  - This field can contain **multiple values**
+  - This field may contain **multiple values**, separated by linebreaks (Alt + Enter) within the cell  
+    The first value will be interpreted as the initial Request ID  
+    Any other values will be interpreted as update Request IDs
 
-### Rules
+
+## The Rules Worksheet
 **Layout and Examples:**
-| NSX-Index          | NSX-Source                            | NSX-Destination   | NSX-Ports        | NSX-Description                | NSX-Servicerequest             | NSX-Customer FW   | T0 Internet        | T1 Payload         | Output   |
-| ------------------ | ------------------------------------- | ----------------- | ---------------- | ------------------------------ | ------------------------------ | ----------------- | ------------------ | ------------------ | -------- |
-| <center>1</center> | net-ABC-prod                          | p_Cust-Clients    | x-DEF            |                                | SKTASK0001245                  |                   |                    |                    |          | 
-| <center>2</center> | ip_Cust-Clients                       | any               | any              | Should be: A short description | SKTASK0001245                  | NWS-Part:ID0123   |                    | <center>x</center> |          | 
-| <center>3</center> | ip_Cust-Clients<br>ip_CBA-servers-all | net-ABC-prod      | x1_GHI<br>x1_JKL | Should be: A short description | SCTASK0001245<br>SCTASK0001246 | NWS-Part:ID0123   | <center>x</center> | <center>x</center> |          |
+| Index              | NSX-Source                            | NSX-Destination   | NSX-Service      | NSX-Description                | Request ID                     | T0 Internet        | T1 Payload         | Output |
+| ------------------ | ------------------------------------- | ----------------- | ---------------- | ------------------------------ | ------------------------------ | ------------------ | ------------------ | ------ |
+| <center>1</center> | net-ABC-prod                          | p_Cust-Clients    | x-DEF            |                                | SKTASK0001245                  |                    |                    |        | 
+| <center>2</center> | ip_Cust-Clients                       | any               | any              | Should be: A short description | SKTASK0001245                  |                    | <center>x</center> |        | 
+| <center>3</center> | ip_Cust-Clients<br>ip_CBA-servers-all | net-ABC-prod      | x1_GHI<br>x1_JKL | Should be: A short description | SCTASK0001245<br>SCTASK0001246 | <center>x</center> | <center>x</center> |        |
 
-- #### NSX-Index
-  The Servicerequest index associated with the resource creation.  
-  It will be added to the resource name.  
-  It and the `Servicrequest` field will be used to identify the resource;
-  Each `Servicerequest`-`Index` pair should be **unique**.
+- ### Index
+  <TODO/>
+  A cardinal count of the resource.  
+  It will be part of the resource name.
 
   - **Value Format:** Any number
   - This field is **required**
   - This field can only contain **one value**
+  - This field's value should be **unique**
 
-- #### NSX-Source
+- ### NSX-Source
   Names of Security Groups to use as sources for the Rule.
 
-  - **Value Format:** String of lowercase or uppercase letters (a-z), numbers, and these symbols: `-`, `_`  
+  - **Value Format:** String of lowercase or uppercase letters (a-z), numbers, and these symbols: `-`, `_`, `.`
   - **Special Value:** `any` - apply the Rule for any source
-  - This field is **required**
-  - This field can contain **multiple values**
+  - This field is **required** for Create and Update requests
+  - This field may contain **multiple values**, separated by linebreaks (Alt + Enter) within the cell  
 
-- #### NSX-Destination
+- ### NSX-Destination
   Names of Security Groups to use as destinations for the Rule.
 
-  - **Value Format:** String of lowercase or uppercase letters (a-z), numbers, and these symbols: `-`, `_`  
+  - **Value Format:** String of lowercase or uppercase letters (a-z), numbers, and these symbols: `-`, `_`, `.`
   - **Special Value:** `any` - apply the Rule for any destination
-  - This field is **required**
-  - This field can contain **multiple values**
+  - This field is **required** for Create and Update requests
+  - This field may contain **multiple values**, separated by linebreaks (Alt + Enter) within the cell  
 
-- #### NSX-Ports
-  Names of Services to apply the Rule to.
+- ### NSX-Services
+  Names of Services to apply the Rule to.  
+  Can refer to either previously defined Services within the same tenant, or to default Services.
 
-  - **Value Format:** String of lowercase or uppercase letters (a-z), numbers, and these symbols: `-`, `_`  
+  - **Value Format:** String of lowercase or uppercase letters (a-z), numbers, and these symbols: `-`, `_`, `.`, ` `
   - **Special Value:** `any` - apply the Rule for any Services
-  - This field is **required**
-  - This field can contain **multiple values**
+  - This field is **required** for Create and Update requests
+  - This field may contain **multiple values**, separated by linebreaks (Alt + Enter) within the cell  
 
-- #### NSX-Description
-  Ideally a short description of the Rule.
-  It will be added to the resource comment.
-  It will be added to the resource name, in a sanitized and potentially truncated format.
+- ### NSX-Description
+  A comment about or description of the Rule.  
+  It will be added to the resource description.
 
   - **Value Format:** Any string
   - This field is **optional**
   - This field can only contain **one value**
 
-- #### NSX-Servicerequest
-  Servicerequest IDs associated with the Rule.
-  They will be added to the resource name.
+- ### Request ID
+  Request IDs associated with the Rule.  
+  They will be added to the resource description.  
+  The initial Request ID will be part of the resource name.
 
-  - **Value Format:** String of letters (a-z) followed by a string of numbers  
-    Example: `SCTASK0000000`
+  - **Value Format:** String of lowercase or uppercase letters (a-z) followed by a string of numbers
+  - **Examples:** `SCTASK01234567`, `INC01234567`
   - This field is **required**
-  - This field can contain **multiple values**
+  - This field may contain **multiple values**, separated by linebreaks (Alt + Enter) within the cell  
+    The first value will be interpreted as the initial Request ID  
+    Any other values will be interpreted as update Request IDs
 
-- #### NSX-Customer FW
-  I have no fucking idea.
-  
-  - **Value Format:** Any string
-  - This field is **optional**
-  - This field can only contain **one value**
-
-- #### T0-Internet and T1-Payload
-  The gateway(s) to use.
-  T1 Payload is chosen by default, if any of these fields is filled out,
-  only the corresponding gateways will be used.
-  Selecting both gateways will result in one deployment for each.
+- ### T0 Internet, T1 Payload
+  The Gateways to use.  
+  T1 Payload is chosen by default.
+  If any of these fields is filled out, only the selected Gateway will be used.
+  Selecting both Gateways will result in one deployment for each.
 
   - **Value Format:** Empty or 'x'  
     The format of these fields are not checked, any non-empty string is treated as a boolean `true`.  
     However, it is advised to use a consistent format, like a simple cross `x`.
   - These fields are **optional**  
-    If neither is specified, `T1-Payload` is set to `true` by default.
+    If neither is specified, `T1 Payload` is set to `true` by default.
   - These fields can only contain **one value**
