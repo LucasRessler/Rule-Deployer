@@ -1,12 +1,12 @@
-using module ".\bucket_deployment.psm1"
-using module ".\nsx_api_handle.psm1"
-using module ".\shared_types.psm1"
-using module ".\api_handle.psm1"
-using module ".\io_handle.psm1"
-using module ".\diagnose.psm1"
-using module ".\parsing.psm1"
-using module ".\logger.psm1"
-using module ".\utils.psm1"
+using module ".\modules\bucket_deployment.psm1"
+using module ".\modules\nsx_api_handle.psm1"
+using module ".\modules\shared_types.psm1"
+using module ".\modules\api_handle.psm1"
+using module ".\modules\io_handle.psm1"
+using module ".\modules\diagnose.psm1"
+using module ".\modules\parsing.psm1"
+using module ".\modules\logger.psm1"
+using module ".\modules\utils.psm1"
 
 [CmdletBinding()]
 param (
@@ -21,8 +21,8 @@ param (
     [String]$ConfigPath = "$PSScriptRoot\config.json"
 )
 
-. "$PSScriptRoot\get_config.ps1"
-. "$PSScriptRoot\resource_configs.ps1"
+. "$PSScriptRoot\modules\get_config.ps1"
+. "$PSScriptRoot\modules\resource_configs.ps1"
 
 function GetAndParseResourceData {
     param (
