@@ -238,7 +238,7 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
                         [String]$message = Format-Error -Message "Integrity error at $($unvalidated_packet.origin_info)" -Hints $faults
                         [String]$short_info = "$actions_info Not Possible"
                         [OutputValue]$val = [OutputValue]::New($message, $short_info, $unvalidated_packet.row_index)
-                        $io_handle.UpdateOutput($_.resource_config, $val)
+                        $io_handle.UpdateOutput($unvalidated_packet.resource_config, $val)
                         $logger.Error($message)
                     } else { $unvalidated_packet.validated = $true; $unvalidated_packet }
                 }
@@ -275,6 +275,17 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
 }
 
 # --- Program Flow ---
+# Load Env Vars
+Get-Content -Path "$PSScriptRoot\.env" | ForEach-Object {
+    if ($_ -match '^\s*(#.*)?$') { return }
+    [String[]]$parts = $_ -split '=', 2
+    if ($parts.Count -eq 2) {
+        $name = $parts[0].Trim()
+        $value = $parts[1].Trim()
+        [System.Environment]::SetEnvironmentVariable($name, $value, "Process")
+    }
+}
+
 # Initialise Logger
 [Logger]$logger = [Logger]::New($Host.UI)
 [String]$LogPath = "$LogDir\ruledeployer_$(Get-Date -Format "yyyy-MM-dd_HH-mm-ss").log"
