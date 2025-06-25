@@ -175,7 +175,12 @@ class ExcelHandle : IOHandle {
                 [Int]$column = $sheet.native_keys.IndexOf($key) + 1
                 @($sheet.contents | ForEach-Object {
                     [PSCustomObject]@{ $key = $_[$key] }
-                }) | Export-Excel -Path $this.file_path -WorksheetName $sheet_name -StartColumn $column
+                }) | Export-Excel -Path $this.file_path -WorksheetName $sheet_name -StartColumn $column -CellStyleSB {
+                    param ($worksheet)
+                    [String]$add_col_str= [Char]([Int][Char]"A" + $column - 1)
+                    $range = $worksheet.Cells["${add_col_str}2:${add_col_str}${last_row}"]
+                    $range.Style.WrapText = $true
+                }
             }
         }
     }
