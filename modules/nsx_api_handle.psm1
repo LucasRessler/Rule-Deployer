@@ -3,6 +3,7 @@ using module ".\shared_types.psm1"
 class NsxApiHandle {
     [String]$base_url
     [Hashtable]$headers
+    [Hashtable]$cache = @{}
 
     NsxApiHandle ([String]$base_url) {
         if (-not $base_url)         { throw "NSX Host Domain was not provided" }
@@ -17,45 +18,76 @@ class NsxApiHandle {
     }
 
     [PSCustomObject] ApiGet ([String]$path) {
-        [String]$url = "$($this.base_url)/api/v1/$path"
-        return Invoke-RestMethod -Method Get -Uri $url -Headers $this.headers
+        if ($null -eq $this.cache[$path]) {
+            [String]$url = "$($this.base_url)/api/v1/$path"
+            $this.cache[$path] = Invoke-RestMethod -Method Get -Uri $url -Headers $this.headers
+        }; return $this.cache[$path]
     }
-    [String] SecurityGroupPath ([String]$tenant, [String]$name) {
-        return "infra/domains/default/groups/${tenant}_grp-ips-${name}"
+    [PSCustomObject[]]ApiGetPaging ([String]$path) {
+        [PSCustomObject]$response = $this.ApiGet($path)
+        [PSCustomObject[]]$results = $response.results
+        while ($response.cursor) {
+            $response = $this.ApiGet("${path}?cursor=$($response.cursor)")
+            $results += $response.results
+        };  return $results
     }
-    [String] ServicePath ([String]$tenant, [String]$name) {
-        return "infra/services/${tenant}_svc-${name}"
+
+    [String] QualifiedSecurityGroupName ([String]$secgroup_name, [String]$tenant) {
+        return "${tenant}_grp-ips-$secgroup_name"
     }
-    [String] RulePath ([String]$tenant, [String]$gateway, [String]$name) {
-        [String]$policy = "${tenant}_Customer_Perimeter_${gateway}_Section01"
+    [String] QualifiedServiceName ([String]$service_name, [String]$tenant) {
+        return "${tenant}_svc-$service_name"
+    }
+    [String] QualifiedRuleName ([String]$rule_name, [String]$tenant, [String]$gateway) {
         [String]$onset = switch ($gateway) {
             "Payload"  { "pfwpay" }
             "Internet" { "pfwinet" }
             default    { throw "Unknown Gateway" }
-        }
-        return "infra/domains/default/security-policies/${policy}/rules/${tenant}_${onset}-${name}_dfw"
+        };  return "${tenant}_${onset}-${rule_name}" 
     }
-    [String] ResourcePath ([DataPacket]$data_packet) {
+
+    [String] SecurityGroupsPath () { return "infra/domains/default/groups" }
+    [String] ServicesPath () { return "infra/services" }
+    [String] PolicyRulesPath ([String]$tenant, [String]$gateway) {
+        [String]$policy = "${tenant}_Customer_Perimeter_${gateway}_Section01"
+        return "infra/domains/default/security-policies/${policy}/rules"
+    }
+    [String] NaiveResourcePath ([DataPacket]$data_packet) {
         [String]$tenant = $data_packet.tenant
         [String]$name = $data_packet.GetApiConversion([ApiAction]::Create).name
         [String]$gateway = $data_packet.data.gateway -replace '^\S+\s*', ""
         switch ($data_packet.resource_config.id) {
-            ([ResourceId]::SecurityGroup) { return $this.SecurityGroupPath($tenant, $name)  }
-            ([ResourceId]::Service)       { return $this.ServicePath($tenant, $name)        }
-            ([ResourceId]::Rule)          { return $this.RulePath($tenant, $gateway, $name) }
-        }
-        return $null
+            ([ResourceId]::SecurityGroup) { return "$($this.SecurityGroupsPath())/$($this.QualifiedSecurityGroupName($name, $tenant))"                  }
+            ([ResourceId]::Service)       { return "$($this.ServicesPath())/$($this.QualifiedServiceName($name, $tenant))"                              }
+            ([ResourceId]::Rule)          { return "$($this.PolicyRulesPath($tenant, $gateway))/$($this.QualifiedRuleName($tenant, $gateway, $name))"   }
+        };  return $null
     }
-    [Boolean] DefaultServiceExists ([String]$service_name) {
-        [PSCustomObject[]]$matches = $this.ApiGet("infra/services").results `
-        | Where-Object { $_.is_default -and $_.display_name -eq $service_name }
+
+    [Boolean] SecurityGroupExists ([String]$secgroup_name, [String]$tenant) {
+        [PSCustomObject[]]$matches = $this.ApiGetPaging($this.SecurityGroupsPath()) `
+        | Where-Object { $_.display_name -eq $this.QualifiedSecurityGroupName($secgroup_name, $tenant) }
+        return $matches.Count -gt 0
+    }
+    [Boolean] ServiceExists ([String]$service_name, [String]$tenant) {
+        [PSCustomObject[]]$matches = $this.ApiGetPaging($this.ServicesPath()) | Where-Object {
+            ($_.is_default -and $_.display_name -eq $service_name) `
+            -or $_.display_name -eq $this.QualifiedServiceName($service_name, $tenant)
+        };  return $matches.Count -gt 0
+    }
+    [Boolean] RuleExists ([String]$rule_name, [String]$tenant, [String]$gateway) {
+        [PSCustomObject[]]$matches = $this.ApiGetPaging($this.PolicyRulesPath($tenant, $gateway)) `
+        | Where-Object { $_.display_name -eq $this.QualifiedRuleName($rule_name, $tenant, $gateway) }
         return $matches.Count -gt 0
     }
     [Boolean] ResourceExists ([DataPacket]$data_packet) {
-        try { return $null -ne $this.ApiGet($this.ResourcePath($data_packet)) }
-        catch [System.Net.WebException] {
-            if ($_.Exception.Response -and $_.Exception.Response.StatusCode -eq 404) { return $false }
-            else { throw $_.Exception }
+        [String]$tenant = $data_packet.tenant
+        [String]$name = $data_packet.GetApiConversion([ApiAction]::Create).name
+        [String]$gateway = $data_packet.data.gateway -replace '^\S+\s*', ""
+        switch ($data_packet.resource_config.id) {
+            ([ResourceId]::SecurityGroup) { return $this.SecurityGroupExists($name, $tenant)  }
+            ([ResourceId]::Service)       { return $this.ServiceExists($name, $tenant)        }
+            ([ResourceId]::Rule)          { return $this.RuleExists($name, $tenant, $gateway) }
         }
+        return $false
     }
 }
