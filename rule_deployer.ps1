@@ -203,7 +203,7 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
             $logger.Info("Checking for existing Resources via NSX API...")
             $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Create))
             $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Update))
-            foreach ($data_packet in $to_deploy) {
+            foreach ($data_packet in $to_deploy | Where-Object { $_ }) {
                 try { [Bool]$resource_exists = $nsx_api_handle.ResourceExists($data_packet) }
                 catch { $logger.Error((Format-Error -Message "NSX Get-Request unsuccessful" -Cause $_.Exception.Message)); break }
                 if ($resource_exists) { $deploy_buckets[1].to_deploy += $data_packet }

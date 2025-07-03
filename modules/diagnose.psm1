@@ -132,10 +132,8 @@ function CheckDependenciesFromApi {
     [String[]]$missing_depends = @()
     [String]$tenant = $failed_packet.tenant
     foreach ($used_service in $failed_packet.data["services"]) {
-        [Bool]$exists = if (-not $used_service.Contains(" ")) {
-            [DataPacket]$service_dp = [DataPacket]::New(@{ name = $used_service }, @{ id = [ResourceId]::Service }, $tenant, $null)
-            $nsx_api_handle.ResourceExists($service_dp) -or $nsx_api_handle.DefaultServiceExists($used_service)
-        } else { $nsx_api_handle.DefaultServiceExists($used_service) }
+        [DataPacket]$service_dp = [DataPacket]::New(@{ name = $used_service }, @{ id = [ResourceId]::Service }, $tenant, $null)
+        [Bool]$exists = $nsx_api_handle.ResourceExists($service_dp)
         if (-not $exists) { $missing_depends += "$used_service (Service)" }
     }
     foreach ($used_source in $failed_packet.data["sources"]) {
@@ -152,9 +150,9 @@ function CheckDependenciesFromApi {
 function CheckDependeesFromApi {
     param ([NsxApiHandle]$nsx_api_handle, [DataPacket]$failed_packet, [Bool]$try_delete)
     if (-not $try_delete -or $failed_packet.resource_config.id -eq [ResourceId]::Rule) { return @() }
-    [String]$dependency_path = "/" + $nsx_api_handle.ResourcePath($failed_packet)
-    [String]$payload_rules_path = $nsx_api_handle.RulePath($failed_packet.tenant, "Payload", "")   -replace '[^/]+$', ""
-    [String]$internet_rules_path = $nsx_api_handle.RulePath($failed_packet.tenant, "Internet", "") -replace '[^/]+$', ""
+    [String]$dependency_path = "/" + $nsx_api_handle.NaiveResourcePath($failed_packet)
+    [String]$payload_rules_path = $nsx_api_handle.PolicyRulesPath($failed_packet.tenant, "Payload")
+    [String]$internet_rules_path = $nsx_api_handle.PolicyRulesPath($failed_packet.tenant, "Internet")
     return @(
         $nsx_api_handle.ApiGet($payload_rules_path).results
         $nsx_api_handle.ApiGet($internet_rules_path).results
