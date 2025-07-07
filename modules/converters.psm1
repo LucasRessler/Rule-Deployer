@@ -121,8 +121,8 @@ function ConvertRulesData ([Hashtable]$data, [ApiAction]$action) {
         sourceType = if ($data.sources.Length) { "Group" } else { "Any" }
         destinationType = if ($data.destinations.Length) { "Group" } else { "Any" }
         serviceType = if ($data.services.Length) { "Service" } else { "Any" }
-        sources = @($data.sources | ForEach-Object { "${TEST_PREFIX}$_ (IPSET)" })
-        destinations = @($data.destinations | ForEach-Object { "${TEST_PREFIX}$_ (IPSET)" })
+        sources = @($data.sources | ForEach-Object { "${TEST_PREFIX}$_" })
+        destinations = @($data.destinations | ForEach-Object { "${TEST_PREFIX}$_" })
         services = @($data.services | ForEach-Object { "${TEST_PREFIX}$_" })
     }
 
@@ -180,7 +180,7 @@ function ImageFromRule ([DataPacket]$data_packet) {
     $name = $data.name
     $image = @{
         gateway = $data.gateway
-        request_id = $data.request_id
+        cis_id = $data.cis_id
         index = $data.index
         name = $name
 
@@ -194,9 +194,10 @@ function ImageFromRule ([DataPacket]$data_packet) {
     }
 
     if ($data.comment) { $image["comment"] = $data.comment }
+    if ($data.request_id) { $image["request_id"] = $data.request_id }
     if ($data.date_creation) { $image["date_creation"] = $data.date_creation }
     if ($data.update_requests.Count) { $image["update_requests"] = $data.update_requests}
-    $expanded = ExpandCollapsed $image @("gateway", "request_id", "index")
+    $expanded = ExpandCollapsed $image $data_packet.resource_config.json_nesting
     return @{ $data_packet.tenant = @{ rules = $expanded } }
 }
 
