@@ -1,34 +1,76 @@
 # Rule Deployer
-**Rule Deployer** is an internal T-Systems tool that streamlines the deployment of NSX Security Groups, Services, and Firewall Rules, specifically for FCI environments.
+
+**Rule Deployer** is an internal T-Systems tool that streamlines the deployment of NSX Security Groups, Services, and Firewall Rules, specific to FCI.
 
 It supports both JSON-based and Excel-based input formats, and automates conversion into the necessary API calls for deployment.
+
+The tool pre-parses values that require special formatting, performs preemptive integrity checks, and logs detailed error messages to catch mistakes before deployment.
 
 > **Note**: Due to API limitations, bulk operations are not supported. All resources are deployed sequentially, which may increase execution time.
 
 ## 📦 Quick Start
+
 ### Minimal execution with JSON input:
+
 ```powershell
 .\rule_deployer -InlineJson '<Json String>' -Action '[auto|create|update|delete]'
 ```
 
 ### Minimal execution with Excel input:
+
 ```powershell
 .\rule_deployer -ExcelFilePath '<Path to Excel>' -Tenant '<Tenant>' -Action '[auto|create|update|delete]'
 ```
 
+---
+
+## 🧪 Usage
+
+<TODO>Full Synopsis</TODO>
+
 ### Optional Parameters:
+
 - `-VRAHostName`: Override default VRA host
 - `-RequestID`: Inject a request ID to be used for all resources (or added as an update ID)
 
+---
 
 ## ⚙️ Configuration
-### Environment Variables
+
+<TODO>Description of Configuration</TODO>
+
+### Configuration File Format:
+
+```jsonc
+{
+  "nsx_image_path": "<ScriptRoot>/nsx_image.json",
+  "excel_sheetnames": {
+    "security_groups": "SecurityGroups",
+    "services": "Services",
+    "rules": "Rules"
+  },
+  "catalog_ids": {
+    "security_groups": "No Default Value",
+    "services": "No Default Value",
+    "rules": "No Default Value"
+  }
+}
+```
+
+---
+
+## Environment Variables
+
+Rule Deployer depends on a few environment variables for various credentials.
+
 These can be set either in your shell environment or in a `.env` file located in the root folder.
 The `.env` file will be auto-loaded at runtime.
 
-> ⚠️ Parsing is simplistic: everything after the first `=` is taken as the value (including quotes).
+> ⚠️ Parsing of the `.env` file is simplistic:
+> Everything after the first `=` is taken as the value (including quotes).
 
-#### **Required Variables**
+### **Required Variables**
+
 ```env
 cmdb_user=NEO\{cmdb-username}
 cmdb_password={cmdb-password}
@@ -38,7 +80,8 @@ rmdb_user={rmdb-username}
 rmdb_password={rmdb-password}
 ```
 
-#### **Optional Variables**
+### **Optional Variables**
+
 ```env
 nsx_user="{nsx-username}"
 nsx_password="{nsx-password}"
@@ -46,54 +89,60 @@ nsx_password="{nsx-password}"
 
 Providing these improves reliability of certain integrity checks.
 
-
-## 🧪 Usage
-Coming soon...
+---
 
 ## 📥 Input Overview
+
 Rule Deployer supports two input formats:
-- **JSON input** via the `-InlineJson` parameter.
-- **Excel input** via the `-ExcelFilePath` parameter.
+- **🔵 JSON input** via the `-InlineJson` parameter.
+- **🟢 Excel input** via the `-ExcelFilePath` parameter.
 
 Despite different formats, the same resource types and value structures apply:
 - Security Groups
 - Services
 - Firewall Rules
 
-Some fields behave differently depending on input format (notably Gateway selection for Rules). These differences are noted where applicable.
+Some fields behave differently depending on input format (notably Gateway selection for Rules).  
+These differences are noted where applicable.
+
+---
 
 ## 🧾 Input Schema Reference
+
 ### 🔐 Security Groups
-| Field            | Required              | JSON Field        | Format                              | Notes                             |
-| ---------------- | --------------------- | ----------------- | ----------------------------------- | --------------------------------- |
-| **IP-Addresses** | ✅ (for Create/Update) | `ip_addresses`    | `IPv4` or `IPv4/CIDR`               | Multiple allowed                  |
-| **Hostname**     | ❌                     | `hostname`        | Any string                          | Multiple allowed                  |
-| **Comment**      | ❌                     | `comment`         | Any string                          | One only                          |
-| **Request ID**   | ❌                     | `request_id`      | `SCTASK1234567`, `INC1234567`, etc. | First = create ID, rest = updates |
-| **Update IDs**   | ❌                     | `update_requests` | Same format as above                | Alternative field for updates     |
+
+| Field            | Required                     | JSON Field        | Format                              | Notes                             |
+| ---------------- | ---------------------------- | ----------------- | ----------------------------------- | --------------------------------- |
+| **IP-Addresses** | ✅ Required for Create/Update | `ip_addresses`    | `IPv4` or `IPv4/CIDR`               | Multiple allowed                  |
+| **Hostname**     | ❌ Optional                   | `hostname`        | Any string                          | Multiple allowed                  |
+| **Comment**      | ❌ Optional                   | `comment`         | Any string                          | One only                          |
+| **Request ID**   | ❌ Optional                   | `request_id`      | `SCTASK1234567`, `INC1234567`, etc. | First = create ID, rest = updates |
+| **Update IDs**   | ❌ Optional                   | `update_requests` | Same format as above                | Alternative field for updates     |
 
 ### ⚙️ Services
-| Field          | Required              | JSON Field        | Format                                            | Notes                                     |
-| -------------- | --------------------- | ----------------- | ------------------------------------------------- | ----------------------------------------- |
-| **Ports**      | ✅ (for Create/Update) | `ports`           | `<protocol>:<port>` or `<protocol>:<start>-<end>` | Protocols: `tcp`, `udp`; multiple allowed |
-| **Comment**    | ❌                     | `comment`         | Any string                                        | One only                                  |
-| **Request ID** | ❌                     | `request_id`      | Same as Security Groups                           |                                           |
-| **Update IDs** | ❌                     | `update_requests` | Same format                                       |                                           |
+
+| Field          | Required                     | JSON Field        | Format                                            | Notes                                     |
+| -------------- | ---------------------------- | ----------------- | ------------------------------------------------- | ----------------------------------------- |
+| **Ports**      | ✅ Required for Create/Update | `ports`           | `<protocol>:<port>` or `<protocol>:<start>-<end>` | Protocols: `tcp`, `udp`; multiple allowed |
+| **Comment**    | ❌ Optional                   | `comment`         | Any string                                        | One only                                  |
+| **Request ID** | ❌ Optional                   | `request_id`      | Same as Security Groups                           |                                           |
+| **Update IDs** | ❌ Optional                   | `update_requests` | Same format                                       |                                           |
 
 > 🔸 ICMP is not supported. Use predefined NSX ICMP Services (e.g. "ICMP ALL", "ICMP Echo Request").
 
 
 ### 🔥 Firewall Rules
-| Field            | Required              | JSON Field        | Format                                          | Notes                              |
-| ---------------- | --------------------- | ----------------- | ----------------------------------------------- | ---------------------------------- |
-| **Index**        | ✅                     | `index`           | Numeric                                         | Differentiates rules per CIS ID    |
-| **Sources**      | ✅ (for Create/Update) | `sources`         | Alphanumeric / `any`                            | Multiple allowed                   |
-| **Destinations** | ✅ (for Create/Update) | `destinations`    | Same as Sources                                 |                                    |
-| **Services**     | ✅ (for Create/Update) | `services`        | Same as Sources                                 | Refers to defined/default Services |
-| **Comment**      | ❌                     | `comment`         | Any string                                      | One only                           |
-| **Request ID**   | ❌                     | `request_id`      | Same as other types                             | First = initial, others = updates  |
-| **Update IDs**   | ❌                     | `update_requests` | Same format                                     |                                    |
-| **Gateway**      | ❌                     | `gateway`         | One or both of: `"T0 Internet"`, `"T1 Payload"` | See notes below                    |
+
+| Field            | Required                     | JSON Field        | Format                                          | Notes                              |
+| ---------------- | ---------------------------- | ----------------- | ----------------------------------------------- | ---------------------------------- |
+| **Index**        | ✅ Always Required            | `index`           | Numeric                                         | Differentiates rules per CIS ID    |
+| **Sources**      | ✅ Required for Create/Update | `sources`         | Alphanumeric / `any`                            | Multiple allowed                   |
+| **Destinations** | ✅ Required for Create/Update | `destinations`    | Same as Sources                                 |                                    |
+| **Services**     | ✅ Required for Create/Update | `services`        | Same as Sources                                 | Refers to defined/default Services |
+| **Comment**      | ❌ Optional                   | `comment`         | Any string                                      | One only                           |
+| **Request ID**   | ❌ Optional                   | `request_id`      | Same as other types                             | First = initial, others = updates  |
+| **Update IDs**   | ❌ Optional                   | `update_requests` | Same format                                     |                                    |
+| **Gateway**      | ❌ Optional                   | `gateway`         | One or both of: `"T0 Internet"`, `"T1 Payload"` | See notes below                    |
 
 > ⚠️ In Excel input, **Gateways** are selected using **two separate boolean-style fields**:
 > `T0 Internet` and `T1 Payload`. If both are checked (non-empty), Rule is deployed for both.
@@ -102,32 +151,24 @@ Some fields behave differently depending on input format (notably Gateway select
 
 > 🧠 A rule’s identity is defined by its **Tenant + CIS ID + Index + Gateway**. Multiple rules may share CIS ID and Index as long as one of these differs.
 
-
-## 🧾 Supported Input Formats
-Rule Deployer supports two main ways of providing input:
-
-- **🔵 JSON (via `-InlineJson`)**
-- **🟢 Excel File (via `-ExcelFilePath`)**
-
-The tool will process either format into internal representations of:
-
-- `security_groups`
-- `services`
-- `rules`
+---
 
 ## 🔵 JSON Input (`-InlineJson`)
-Use the `-InlineJson` parameter to pass a JSON string defining your resources. The JSON input supports two structurally equivalent styles: **flat** and **nested**.
+
+Use the `-InlineJson` parameter to pass a JSON string defining your resources.
+The JSON input supports two structurally equivalent styles: **flat** and **nested**.
 
 > 📌 You can define multiple tenants within a single JSON string.
 > Alternatively, if you're using the `-Tenant` parameter, omit tenant names and provide top-level resource keys instead.
 
 ### 🧱 JSON Structure Overview
+
 ```jsonc
 {
   "tenant_name": {
-    "security_groups": ["..."],
-    "services": ["..."],
-    "rules": ["..."]
+    "security_groups": "...",
+    "services": "...",
+    "rules": "..."
   }
   // ...
 }
@@ -137,14 +178,14 @@ If `-Tenant` is used, structure should look like:
 
 ```json
 {
-  "security_groups": ["..."],
-  "services": ["..."],
-  "rules": ["..."]
+  "security_groups": "...",
+  "services": "...",
+  "rules": "..."
 }
 ```
 
-
 ### 🔹 Flat Format
+
 Each resource group is an **array of objects**, one per resource.
 
 ```json
@@ -184,8 +225,8 @@ Each resource group is an **array of objects**, one per resource.
 }
 ```
 
-
 ### 🔸 Nested Format
+
 Each group is an **object of objects**, using names or IDs as keys.
 
 ```json
@@ -223,8 +264,8 @@ Each group is an **object of objects**, using names or IDs as keys.
 }
 ```
 
-
 ### 🔀 Format Notes
+
 | Format     | Structure                | When to Use                      |
 | ---------- | ------------------------ | -------------------------------- |
 | **Flat**   | Arrays of resources      | Simpler for hand-written JSON    |
@@ -235,6 +276,7 @@ Each group is an **object of objects**, using names or IDs as keys.
 ---
 
 ## 🟢 Excel Input (`-ExcelFilePath`)
+
 Use the `-ExcelFilePath` parameter to specify an Excel file with one or more worksheets:
 
 - `SecurityGroups`
@@ -274,6 +316,7 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 - Values for fields that support **multiple entries** (e.g. IPs, Ports, Request IDs) should be separated by **line breaks** (`Alt + Enter`).
 
 ### 🛡️ SecurityGroups Worksheet
+
 #### Required Columns (in order):
 1. **Security Group Name**
 2. **IP-Addresses**
@@ -294,6 +337,7 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 
 
 ### ⚙️ Services Worksheet
+
 #### Required Columns (in order):
 1. **Service Name**
 2. **Ports**
@@ -314,6 +358,7 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 
 
 ### 🔥 Rules Worksheet
+
 #### Required Columns (in order):
 1. **Index**
 2. **NSX-Source**
@@ -327,6 +372,7 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 10. Output
 
 #### Notes:
+
 - Gateway selection is determined by columns **`T0 Internet`** and **`T1 Payload`**:
   - If either contains any non-empty value (e.g. `x`), that gateway is selected.
   - If both are filled, the rule is deployed for **both gateways**.
@@ -335,6 +381,7 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 - Rule uniqueness is determined by **CIS ID + Index + Gateway**.
 
 #### Example Layout:
+
 | Index | NSX-Source                              | NSX-Destination | NSX-Service        | NSX-Description           | Request ID                     | CIS ID | T0 Internet | T1 Payload | Output |
 | ----- | --------------------------------------- | --------------- | ------------------ | ------------------------- | ------------------------------ | ------ | ----------- | ---------- | ------ |
 | 2     | ip\_Cust-Clients                        | any             | any                | A short description       | SCTASK0001245                  | 123456 |             | x          |        |
