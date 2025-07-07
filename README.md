@@ -1,243 +1,341 @@
-# Arca-Ignis
-Arca-Ignis is a T-Systems in-house tool for faster deployment of NSX Security Groups, Services and Firewall Rules specific to FCI.
-The input data is provided via a centraliced Excel sheet, parsed, converted to API-calls and deployed.
-Unfortunately, the API currently lacks bulk request support, requiring sequential deployment, which may increase the time needed.
+# Rule Deployer
+**Rule Deployer** is an internal T-Systems tool that streamlines the deployment of NSX Security Groups, Services, and Firewall Rules, specifically for FCI environments.
 
-# Input: The Excel file
-The Arca-Ignis input file can be found at \<insert\>.
-It is structured into the following sheets:
-- **Servergroups** (Security Groups)
-- **Portgroups**   (Services)
-- **Rules**        (Perimeter FW Rules)
+It supports both JSON-based and Excel-based input formats, and automates conversion into the necessary API calls for deployment.
 
-## General
-Most fields must conform to a specified format, detailed in the field descriptions below.  
-Some fields are optional, as noted explicitly in their descriptions.  
-Some fields can contain multiple values, as noted explicitly in their descriptions.  
-Sseparate values by using multiple lines in the same cell.
-In Excel, this is achieved by pressing `Alt + Enter` while editing a cell.
+> **Note**: Due to API limitations, bulk operations are not supported. All resources are deployed sequentially, which may increase execution time.
 
-### Output
-Each sheet's last column is reserved for Arca-Ignis output.
-> **IMPORTANT:** Arca-Ignis only processes rows with an empty output cell
+## 📦 Quick Start
+### Minimal execution with JSON input:
+```powershell
+.\rule_deployer -InlineJson '<Json String>' -Action '[auto|create|update|delete]'
+```
 
-**Possible output states:**
-- **Parse Error**  
-  `Missing Group Name`, `Invalid IP-Address`, `Duplicate NSX-Index`, etc.  
-  The input doesn't meet format specifications.
-- **Deploy Error**  
-  `Deploy Error`  
-  The server connection failed, or the server rejected the API call.
-  If the latter is ever the case, there might be a bug in the parse or conversion logic;
-  Please report any problematic input!
-- **Action Successful**  
-  `Created Successfully`, `Updated Successfully`, `Deleted Successfully`  
-  The action completed successfully for the provided data.
-- **Action(s) Failed**  
-  `Create Failed`, `Create/Update Failed`, `Delete Failed`, etc.  
-  All queued actions failed for the provided data.
+### Minimal execution with Excel input:
+```powershell
+.\rule_deployer -ExcelFilePath '<Path to Excel>' -Tenant '<Tenant>' -Action '[auto|create|update|delete]'
+```
 
-#### Failed Actions
-If you encounter a failed action, here are some possible reasons:
-- **Delete Failed**
-  - The resource might not exist.
-  - The Security Group or Service might still be referenced by a Firewall Rule.
-- **Update Failed**
-  - The resource might not exist.
-- **Create Failed**
-  - The resource might already exist.
-  - The Firewall Rule might reference Security Groups or Services that don't exist yet.
-
-If none of these are the case, double-check your data against the format specifications.
-This should generally be caught by the parsing logic, but I am not immune to creating bugs;
-Please report the problematic input in this case!
-
-When dealing with Firewall Rules, the API also seems to occasionally run into deployment collisions,
-which are unfortunately beyond the tool's control.
-This should be reasonably rare, but you will have to reattempt the deployment,
-either using Arca-Ignis (clear the output cell so Arca-Ignis will process the data), or manually.
-
-#### Multiple Outputs
-It is possible for a Firewall Rule to be deployed on two separate gateways and to result in two different output states.
-In this case, the output messages will be comma separated in the order that the gateways appear in the Excel sheet.  
-For example: `Updated Successfully, Create/Update Failed`
-
-## Servergroups
-**NSX resource name**: _Security Groups_
-
-**Layout and Examples:**
-| Group Name         | IP-Address                    | Hostname   | Comment                   | NSX-Servicerequest             | Output   |
-| ------------------ | ----------------------------- | ---------- | ------------------------- | ------------------------------ | -------- |
-| net-ABC-prod       | 10.250.10.1                   |            |                           |                                |          | 
-| ip_Cust-Clients    | 10.250.10.2/24                | hstabc0123 | Comment can be any string | SCTASK0001234                  |          |
-| ip_CBA-servers-all | 10.250.10.3<br>10.250.10.1/24 | hstxyz43   | Comment can be any string | SCTASK0001234<br>SCTASK0001235 |          |
- 
-- ### Group Name
-  The name of the Security Group.
-
-  - **Value Format:** String of lowercase or uppercase letters (a-z), numbers, and these symbols: `-`, `_`  
-  - This field is **required**  
-  - This field can only contain **one value**
-  - This field's value should be **unique**
+### Optional Parameters:
+- `-VRAHostName`: Override default VRA host
+- `-RequestID`: Inject a request ID to be used for all resources (or added as an update ID)
 
 
-- ### IP-Address
-  The ip-addresses that constitute the Security Group.
+## ⚙️ Configuration
+### Environment Variables
+These can be set either in your shell environment or in a `.env` file located in the root folder.
+The `.env` file will be auto-loaded at runtime.
 
-  - **Value Format:** IPv4-address, with or without network part  
-    `<ipv4>` | `<ipv4>/<net>`  
-  - **Examples:** `1.2.3.4`, `1.2.3.4/24`
-  - This field is **required**
-  - This field can contain **multiple values**
+> ⚠️ Parsing is simplistic: everything after the first `=` is taken as the value (including quotes).
 
-- ### Hostname
-  The hostname associated with the Security Group.
-  It will be added to the resource description.
+#### **Required Variables**
+```env
+cmdb_user=NEO\{cmdb-username}
+cmdb_password={cmdb-password}
+catalogdb_user=neo\{catalogdb-username}
+catalogdb_password={catalogdb-password}
+rmdb_user={rmdb-username}
+rmdb_password={rmdb-password}
+```
 
-  - **Value Format:** Any string
-  - This field is **optional**
-  - This field can only contain **one value**
+#### **Optional Variables**
+```env
+nsx_user="{nsx-username}"
+nsx_password="{nsx-password}"
+```
 
-- ### Comment
-  A comment or description of the Security Group.
-  It will be added to the resource description.
+Providing these improves reliability of certain integrity checks.
 
-  - **Value Format:** Any string
-  - This field is **optional**
-  - This field can only contain **one value**
 
-- ### NSX-Servicerequest
-  Servicerequest IDs associated with the Security Group.
-  They will be added to the resource description.
+## 🧪 Usage
+Coming soon...
 
-  - **Value Format:** String of letters (a-z) followed by a string of numbers  
-    Example: `SCTASK0000000`
-  - This field is **optional**
-  - This field can contain **multiple values**
+## 📥 Input Overview
+Rule Deployer supports two input formats:
+- **JSON input** via the `-InlineJson` parameter.
+- **Excel input** via the `-ExcelFilePath` parameter.
 
-## Portgroups
-**NSX resource name**: _Services_
+Despite different formats, the same resource types and value structures apply:
+- Security Groups
+- Services
+- Firewall Rules
 
-**Layout and Examples:**
-| Group Name   | Port                              | Comment                   | NSX-Servicerequest             | Output   |
-| ------------ | --------------------------------- | ------------------------- | ------------------------------ | -------- |
-| x-DEF        | tcp:50                            |                           |                                |          | 
-| x1_GHI       | upd:100-140                       | Comment can be any string | SCTASK0001235                  |          | 
-| x1_JKL       | upd:100<br>tcp:200-210<br>tcp:220 | Comment can be any string | SCTASK0001236<br>SCTASK0001235 |          |
+Some fields behave differently depending on input format (notably Gateway selection for Rules). These differences are noted where applicable.
 
-- ### Group Name
-  The name of the Service.
+## 🧾 Input Schema Reference
+### 🔐 Security Groups
+| Field            | Required              | JSON Field        | Format                              | Notes                             |
+| ---------------- | --------------------- | ----------------- | ----------------------------------- | --------------------------------- |
+| **IP-Addresses** | ✅ (for Create/Update) | `ip_addresses`    | `IPv4` or `IPv4/CIDR`               | Multiple allowed                  |
+| **Hostname**     | ❌                     | `hostname`        | Any string                          | Multiple allowed                  |
+| **Comment**      | ❌                     | `comment`         | Any string                          | One only                          |
+| **Request ID**   | ❌                     | `request_id`      | `SCTASK1234567`, `INC1234567`, etc. | First = create ID, rest = updates |
+| **Update IDs**   | ❌                     | `update_requests` | Same format as above                | Alternative field for updates     |
 
-  - **Value Format:** String of lowercase or uppercase letters (a-z), numbers, and these symbols: `-`, `_`  
-  - This field is **required**
-  - This field can only contain **one value**
-  - This field's value should be **unique**
+### ⚙️ Services
+| Field          | Required              | JSON Field        | Format                                            | Notes                                     |
+| -------------- | --------------------- | ----------------- | ------------------------------------------------- | ----------------------------------------- |
+| **Ports**      | ✅ (for Create/Update) | `ports`           | `<protocol>:<port>` or `<protocol>:<start>-<end>` | Protocols: `tcp`, `udp`; multiple allowed |
+| **Comment**    | ❌                     | `comment`         | Any string                                        | One only                                  |
+| **Request ID** | ❌                     | `request_id`      | Same as Security Groups                           |                                           |
+| **Update IDs** | ❌                     | `update_requests` | Same format                                       |                                           |
 
-- ### Port
-  The ports / port-ranges that constitute the Service.
+> 🔸 ICMP is not supported. Use predefined NSX ICMP Services (e.g. "ICMP ALL", "ICMP Echo Request").
 
-  - **Value Format:** Protocol:Port or Protocol:Port-range pair  
-    `<protocol>:<port>` | `<protocol>:<port-start>-<port-end>`  
-    Supported protocols are `tcp` and `udp`  
-    `icmp` is not supported; Please use default ICMP Services (i.e. 'ICMP ALL' or 'ICMP Echo Request'), instead of creating a custom one!
-  - **Examples:** `tcp:100`, `udp:120-130`
-  - This field is **required**
-  - This field can contain **multiple values**
 
-- ### Comment
-  A comment or description of the Service.
-  It will be added to the resource description.
+### 🔥 Firewall Rules
+| Field            | Required              | JSON Field        | Format                                          | Notes                              |
+| ---------------- | --------------------- | ----------------- | ----------------------------------------------- | ---------------------------------- |
+| **Index**        | ✅                     | `index`           | Numeric                                         | Differentiates rules per CIS ID    |
+| **Sources**      | ✅ (for Create/Update) | `sources`         | Alphanumeric / `any`                            | Multiple allowed                   |
+| **Destinations** | ✅ (for Create/Update) | `destinations`    | Same as Sources                                 |                                    |
+| **Services**     | ✅ (for Create/Update) | `services`        | Same as Sources                                 | Refers to defined/default Services |
+| **Comment**      | ❌                     | `comment`         | Any string                                      | One only                           |
+| **Request ID**   | ❌                     | `request_id`      | Same as other types                             | First = initial, others = updates  |
+| **Update IDs**   | ❌                     | `update_requests` | Same format                                     |                                    |
+| **Gateway**      | ❌                     | `gateway`         | One or both of: `"T0 Internet"`, `"T1 Payload"` | See notes below                    |
 
-- **Value Format:** Any string
-  - This field is **optional**
-  - This field can only contain **one value**
+> ⚠️ In Excel input, **Gateways** are selected using **two separate boolean-style fields**:
+> `T0 Internet` and `T1 Payload`. If both are checked (non-empty), Rule is deployed for both.
 
-- ### NSX-Servicerequest
-  Servicerequest IDs associated with the Service.
-  They will be added to the resource description.
+> 🚪 If no **Gateway** is specified, `T1 Payload` is chosen by default.
 
-  - **Value Format:** String of letters (a-z) followed by a string of numbers  
-    Example: `SCTASK0000000`
-  - This field is **optional**
-  - This field can contain **multiple values**
+> 🧠 A rule’s identity is defined by its **Tenant + CIS ID + Index + Gateway**. Multiple rules may share CIS ID and Index as long as one of these differs.
 
-## Rules
-**NSX resource name**: _Perimeter FW Rules_
 
-**Layout and Examples:**
-| NSX-Index          | NSX-Source                            | NSX-Destination   | NSX-Ports        | NSX-Description                | NSX-Servicerequest             | NSX-Customer FW   | T0 Internet        | T1 Payload         | Output   |
-| ------------------ | ------------------------------------- | ----------------- | ---------------- | ------------------------------ | ------------------------------ | ----------------- | ------------------ | ------------------ | -------- |
-| <center>1</center> | net-ABC-prod                          | p_Cust-Clients    | x-DEF            |                                | SKTASK0001245                  |                   |                    |                    |          | 
-| <center>2</center> | ip_Cust-Clients                       | any               | any              | Should be: A short description | SKTASK0001245                  | NWS-Part:ID0123   |                    | <center>x</center> |          | 
-| <center>3</center> | ip_Cust-Clients<br>ip_CBA-servers-all | net-ABC-prod      | x1_GHI<br>x1_JKL | Should be: A short description | SCTASK0001245<br>SCTASK0001246 | NWS-Part:ID0123   | <center>x</center> | <center>x</center> |          |
+## 🧾 Supported Input Formats
+Rule Deployer supports two main ways of providing input:
 
-- ### NSX-Index
-  A cardinal count of the resource.
-  It will be added to the resource name.
+- **🔵 JSON (via `-InlineJson`)**
+- **🟢 Excel File (via `-ExcelFilePath`)**
 
-  - **Value Format:** Any number
-  - This field is **required**
-  - This field can only contain **one value**
-  - This field's value should be **unique**
+The tool will process either format into internal representations of:
 
-- ### NSX-Source
-  Names of Security Groups to use as sources for the Rule.
+- `security_groups`
+- `services`
+- `rules`
 
-  - **Value Format:** String of lowercase or uppercase letters (a-z), numbers, and these symbols: `-`, `_`  
-  - **Special Value:** `any` - apply the Rule for any source
-  - This field is **required**
-  - This field can contain **multiple values**
+## 🔵 JSON Input (`-InlineJson`)
+Use the `-InlineJson` parameter to pass a JSON string defining your resources. The JSON input supports two structurally equivalent styles: **flat** and **nested**.
 
-- ### NSX-Destination
-  Names of Security Groups to use as destinations for the Rule.
+> 📌 You can define multiple tenants within a single JSON string.
+> Alternatively, if you're using the `-Tenant` parameter, omit tenant names and provide top-level resource keys instead.
 
-  - **Value Format:** String of lowercase or uppercase letters (a-z), numbers, and these symbols: `-`, `_`  
-  - **Special Value:** `any` - apply the Rule for any destination
-  - This field is **required**
-  - This field can contain **multiple values**
+### 🧱 JSON Structure Overview
+```jsonc
+{
+  "tenant_name": {
+    "security_groups": ["..."],
+    "services": ["..."],
+    "rules": ["..."]
+  }
+  // ...
+}
+```
 
-- ### NSX-Ports
-  Names of Services to apply the Rule to.
+If `-Tenant` is used, structure should look like:
 
-  - **Value Format:** String of lowercase or uppercase letters (a-z), numbers, and these symbols: `-`, `_`  
-  - **Special Value:** `any` - apply the Rule for any Services
-  - This field is **required**
-  - This field can contain **multiple values**
+```json
+{
+  "security_groups": ["..."],
+  "services": ["..."],
+  "rules": ["..."]
+}
+```
 
-- ### NSX-Description
-  Ideally a short description of the Rule.
-  It will be added to the resource comment.
-  It will be added to the resource name, in a sanitized and potentially truncated format.
 
-  - **Value Format:** Any string
-  - This field is **optional**
-  - This field can only contain **one value**
+### 🔹 Flat Format
+Each resource group is an **array of objects**, one per resource.
 
-- ### NSX-Servicerequest
-  Servicerequest IDs associated with the Rule.
-  They will be added to the resource name.
+```json
+{
+  "t001": {
+    "security_groups": [
+      {
+        "name": "secgroup_name1",
+        "ip_addresses": ["10.0.0.1", "10.0.0.20/24"],
+        "hostname": ["hostname1"],
+        "comment": "Optional comment",
+        "request_id": "SCTASK01234567",
+        "update_requests": ["SCTASK01234568"]
+      }
+    ],
+    "services": [
+      {
+        "name": "service_name1",
+        "ports": ["tcp:123", "udp:120-130"],
+        "comment": "Service description",
+        "request_id": "SCTASK01234567"
+      }
+    ],
+    "rules": [
+      {
+        "gateway": ["T0 Internet"],
+        "cis_id": "123456",
+        "index": "1",
+        "sources": ["secgroup_name1"],
+        "destinations": ["secgroup_name1"],
+        "services": ["service_name1"],
+        "comment": "Rule description",
+        "request_id": "SCTASK01234567"
+      }
+    ]
+  }
+}
+```
 
-  - **Value Format:** String of letters (a-z) followed by a string of numbers  
-    Example: `SCTASK0000000`
-  - This field is **required**
-  - This field can contain **multiple values**
 
-- ### NSX-Customer FW
-  I have no fucking idea.
-  
-  - **Value Format:** Any string
-  - This field is **optional**
-  - This field can only contain **one value**
+### 🔸 Nested Format
+Each group is an **object of objects**, using names or IDs as keys.
 
-- ### T0-Internet and T1-Payload
-  The gateway(s) to use.
-  T1 Payload is chosen by default, if any of these fields is filled out,
-  only the corresponding gateways will be used.
-  Selecting both gateways will result in one deployment for each.
+```json
+{
+  "t001": {
+    "security_groups": {
+      "secgroup_name1": {
+        "ip_addresses": ["10.0.0.1", "10.0.0.20/24"],
+        "hostname": ["hostname1"],
+        "comment": "Optional comment",
+        "request_id": "SCTASK01234567"
+      }
+    },
+    "services": {
+      "service_name1": {
+        "ports": ["tcp:123", "udp:120-130"],
+        "comment": "Service description",
+        "request_id": "SCTASK01234567"
+      }
+    },
+    "rules": {
+      "T0 Internet": {
+        "123456": {
+          "1": {
+            "sources": ["secgroup_name1"],
+            "destinations": ["secgroup_name1"],
+            "services": ["service_name1"],
+            "comment": "Rule description",
+            "request_id": "SCTASK01234567"
+          }
+        }
+      }
+    }
+  }
+}
+```
 
-  - **Value Format:** Empty or 'x'  
-    The format of these fields are not checked, any non-empty string is treated as a boolean `true`.  
-    However, it is advised to use a consistent format, like a simple cross `x`.
-  - These fields are **optional**  
-    If neither is specified, `T1-Payload` is set to `true` by default.
-  - These fields can only contain **one value**
+
+### 🔀 Format Notes
+| Format     | Structure                | When to Use                      |
+| ---------- | ------------------------ | -------------------------------- |
+| **Flat**   | Arrays of resources      | Simpler for hand-written JSON    |
+| **Nested** | Objects keyed by name/ID | Useful for deterministic mapping |
+
+> ✨ Both formats are functionally identical. Choose based on what’s easier for your generator or pipeline.
+
+---
+
+## 🟢 Excel Input (`-ExcelFilePath`)
+Use the `-ExcelFilePath` parameter to specify an Excel file with one or more worksheets:
+
+- `SecurityGroups`
+- `Services`
+- `Rules`
+
+> The worksheet names can be customized via the config file (`excel_sheetnames`).
+
+> ⚠️ If a required worksheet is missing, an error will be logged - but processing will continue with any remaining valid sheets.
+
+### ✅ Worksheet Requirements
+- Column order matters - **header names don’t**.
+- Last column in each sheet is **reserved for output**.
+- Rows with non-empty output field are **skipped**.
+
+```jsonc
+// Example config override
+{
+  "excel_sheetnames": {
+    "security_groups": "MySecuritySheet",
+    "services": "SvcSheet",
+    "rules": "FirewallRules"
+  }
+}
+```
+
+### 🔍 Input Behavior Differences
+| Feature            | JSON                   | Excel                            |
+| ------------------ | ---------------------- | -------------------------------- |
+| Gateways (Rules)   | `gateway: [...]` field | Separate boolean-style columns   |
+| Multi-value fields | Arrays (`[]`)          | Line-break separated (Alt+Enter) |
+
+### 🧾 Worksheet Guidelines
+- **Column headers** must be present, but their names **don’t need to match exactly**. Only the **column order** matters.
+- **Extra columns are allowed**, but ignored (unless one is the output column).
+- The **last column** is reserved for output. If its cell for a row is non-empty, that row will be **skipped entirely**.
+- Values for fields that support **multiple entries** (e.g. IPs, Ports, Request IDs) should be separated by **line breaks** (`Alt + Enter`).
+
+### 🛡️ SecurityGroups Worksheet
+#### Required Columns (in order):
+1. **Security Group Name**
+2. **IP-Addresses**
+3. Hostname
+4. Security Group Comment
+5. Request ID
+6. Output (must be last)
+
+#### Notes:
+- The **`IP-Addresses`** and **`Request ID`** fields can have multiple entries - enter each on a new line.
+- The **first Request ID** is used as the creation request; others are stored as update references.
+
+#### Example Layout:
+| Security Group Name | IP-Addresses                  | Hostname   | Security Group Comment    | Request ID                     | Output |
+| ------------------- | ----------------------------- | ---------- | ------------------------- | ------------------------------ | ------ |
+| ip\_Cust-Clients    | 10.250.10.2/24                | hstabc0123 | Comment can be any string | SCTASK0001234                  |        |
+| ip\_CBA-servers-all | 10.250.10.3<br>10.250.10.1/24 | hstxyz43   | Another comment           | SCTASK0001234<br>SCTASK0001235 |        |
+
+
+### ⚙️ Services Worksheet
+#### Required Columns (in order):
+1. **Service Name**
+2. **Ports**
+3. Service Comment
+4. Request ID
+5. Output
+
+#### Notes:
+- Multiple **Ports** can be specified using line breaks.
+- Valid formats: `tcp:80`, `udp:100-200`
+- As with other resources, **multiple Request IDs** are supported (first = create, rest = update).
+
+#### Example Layout:
+| Service Name | Ports                             | Service Comment | Request ID                     | Output |
+| ------------ | --------------------------------- | --------------- | ------------------------------ | ------ |
+| x1\_GHI      | udp:100-140                       | Comment here    | SCTASK0001235                  |        |
+| x1\_JKL      | udp:100<br>tcp:200-210<br>tcp:220 | Another comment | SCTASK0001236<br>SCTASK0001235 |        |
+
+
+### 🔥 Rules Worksheet
+#### Required Columns (in order):
+1. **Index**
+2. **NSX-Source**
+3. **NSX-Destination**
+4. **NSX-Service**
+5. NSX-Description
+6. Request ID
+7. CIS ID
+8. **T0 Internet**
+9. **T1 Payload**
+10. Output
+
+#### Notes:
+- Gateway selection is determined by columns **`T0 Internet`** and **`T1 Payload`**:
+  - If either contains any non-empty value (e.g. `x`), that gateway is selected.
+  - If both are filled, the rule is deployed for **both gateways**.
+  - If neither is filled, `T1 Payload` is used by default.
+- Multi-value fields (`NSX-Source`, `Destination`, `Service`, `Request ID`) use line breaks for separation.
+- Rule uniqueness is determined by **CIS ID + Index + Gateway**.
+
+#### Example Layout:
+| Index | NSX-Source                              | NSX-Destination | NSX-Service        | NSX-Description           | Request ID                     | CIS ID | T0 Internet | T1 Payload | Output |
+| ----- | --------------------------------------- | --------------- | ------------------ | ------------------------- | ------------------------------ | ------ | ----------- | ---------- | ------ |
+| 2     | ip\_Cust-Clients                        | any             | any                | A short description       | SCTASK0001245                  | 123456 |             | x          |        |
+| 3     | ip\_Cust-Clients<br>ip\_CBA-servers-all | net-ABC-prod    | x1\_GHI<br>x1\_JKL | Another short description | SCTASK0001245<br>SCTASK0001246 | 123456 | x           | x          |        |
