@@ -163,24 +163,28 @@ class ExcelHandle : IOHandle {
             [Int]$last_row = $sheet.contents.Count + 1
             [Int]$output_col = $sheet.native_keys.Count
             [String]$output_col_str = [Char]([Int][Char]"A" + $output_col - 1)
+            [String]$data_range = "A2:${output_col_str}${last_row}"
             [String]$format_range = "${output_col_str}2:${output_col_str}${last_row}"
             [String]$output_key = $sheet.native_keys[$output_col - 1]
+
+            foreach ($key in $sheet.additional_output_keys) {
+                [Int]$column = $sheet.native_keys.IndexOf($key) + 1
+                @($sheet.contents | ForEach-Object {
+                    [PSCustomObject]@{ $key = $_[$key] }
+                }) | Export-Excel -Path $this.file_path -WorksheetName $sheet_name -StartColumn $column
+            }
+
             @($sheet.contents | ForEach-Object {
                 [PSCustomObject]@{ $output_key = $_[$output_key] }
             }) | Export-Excel -Path $this.file_path -WorksheetName $sheet_name -StartColumn $output_col -ConditionalText @(
                 New-ConditionalText -ConditionalType ContainsText "Successful" -BackgroundColor "LightGreen" -ConditionalTextColor "Green" -Range $format_range
                 New-ConditionalText -ConditionalType NotContainsText "Successful" -BackgroundColor "Pink" -ConditionalTextColor "Red" -Range $format_range
-            )
-            foreach ($key in $sheet.additional_output_keys) {
-                [Int]$column = $sheet.native_keys.IndexOf($key) + 1
-                @($sheet.contents | ForEach-Object {
-                    [PSCustomObject]@{ $key = $_[$key] }
-                }) | Export-Excel -Path $this.file_path -WorksheetName $sheet_name -StartColumn $column -CellStyleSB {
-                    param ($worksheet)
-                    [String]$add_col_str= [Char]([Int][Char]"A" + $column - 1)
-                    $range = $worksheet.Cells["${add_col_str}2:${add_col_str}${last_row}"]
-                    $range.Style.WrapText = $true
-                }
+            ) -CellStyleSB {
+                param ($worksheet)
+                $range = $worksheet.Cells[$data_range]
+                $range.Style.WrapText = $false
+                $worksheet.Cells.AutoFitColumns()
+                $range.Style.WrapText = $true
             }
         }
     }
