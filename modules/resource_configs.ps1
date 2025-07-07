@@ -112,7 +112,7 @@ function Get-RulesConfig ([Hashtable]$config) {
                 is_unique = $true
                 generator = {
                     param([Hashtable]$data)
-                    Join @($data.gateway, $data.request_id, $data.index) " - "
+                    Join @($data.gateway, $data.cis_id, $data.index) " - "
                 }
             }
             name = @{
@@ -120,7 +120,7 @@ function Get-RulesConfig ([Hashtable]$config) {
                 regex = $config.regex.group_name
                 generator = {
                     param([Hashtable]$data)
-                    Join @($data.request_id, $data.index, "Auto") "_"
+                    "IDC$($data.cis_id)_$($data.index)"
                 }
             }
             sources = @{
@@ -181,6 +181,11 @@ function Get-RulesConfig ([Hashtable]$config) {
             request_id = @{
                 dbg_name = "Initial Request ID"
                 regex = $config.regex.request_id
+                is_optional = $true
+            }
+            cis_id = @{
+                dbg_name = "CIS ID"
+                regex = "\d+"
                 required_for_delete = $true
             }
             update_requests = @{
@@ -198,10 +203,11 @@ function Get-RulesConfig ([Hashtable]$config) {
             "services"
             "comment"
             "all_request_ids"
+            "cis_id"
             "t0_internet"
             "t1_payload"
         )
-        json_nesting = @("gateway", "request_id", "index")
+        json_nesting = @("gateway", "cis_id", "index")
         resource_name = "Firewall Rule"
         field_name = "rules"
         excel_sheet_name = $config.excel_sheetnames.rules
