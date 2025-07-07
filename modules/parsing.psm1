@@ -54,17 +54,24 @@ function ParsePort ([String]$raw_input) {
     $port
 }
 
+function ParseSecgroupReference ([String]$raw_input) {
+    # formats security groups references to look like <Secgroup-Name> (<TYPE>)
+
+    if ($raw_input -eq "any") { return $raw_input }
+    if ($raw_input -match '(?i)^(\S+)(\s*\((ipset|group|segment|vm)\))?$') {
+        if ($null -eq $Matches[2]) { return "$($Matches[1]) (IPSET)" }
+        else { return "$($Matches[1]) ($($Matches[3].ToUpper()))" }
+    }; return $raw_input
+}
+
 function ParseArrayWithAny ([String[]]$array) {
     # returns the input array if it doesn't include "any"
     # returns an empty array when the input is `@("any")` (case insensitive)
     # throws in any other case
 
-    if ("any" -notin $array) {
-        return $array
-    } else {
-        if ($array.Length -eq 1) { return @() }
-        else { throw "Can't have more than 1 element when using 'any'" }
-    }
+    if ("any" -notin $array) { return $array }
+    elseif ($array.Length -eq 1) { return @() }
+    else { throw "Can't have more than 1 element when using 'any'" }
 }
 
 # General Parser
@@ -128,7 +135,7 @@ function ParseIntermediate {
                 $errors += Format-Error -Message "Invalid ${dbg_name}: '$sub_value'" -Hints $hints
             }
             if ($subparser) {
-                try { & $subparser -value $sub_value }
+                try { & $subparser $sub_value }
                 catch {
                     $errors += Format-Error -Message "Invalid ${dbg_name}: '$sub_value'" -Cause $_.Exception.Message
                     continue
@@ -137,7 +144,7 @@ function ParseIntermediate {
         }
 
         if ($postparser) {
-            try { $value = & $postparser -value $value }
+            try { $value = & $postparser $value }
             catch { $errors += Format-Error -Message "Invalid ${dbg_name}" -Cause $_.Exception.Message }
         }
 

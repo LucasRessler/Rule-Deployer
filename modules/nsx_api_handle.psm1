@@ -24,16 +24,27 @@ class NsxApiHandle {
         }; return $this.cache[$path]
     }
     [PSCustomObject[]]ApiGetPaging ([String]$path) {
+        [String]$paged_path = "PAGED:::$path"
+        if ($this.cache[$paged_path]) { return $this.cache[$paged_path] }
         [PSCustomObject]$response = $this.ApiGet($path)
         [PSCustomObject[]]$results = $response.results
         while ($response.cursor) {
             $response = $this.ApiGet("${path}?cursor=$($response.cursor)")
             $results += $response.results
-        };  return $results
+        };  $this.cache[$paged_path] = $results
+        return $results
     }
 
     [String] QualifiedSecurityGroupName ([String]$secgroup_name, [String]$tenant) {
-        return "${tenant}_grp-ips-$secgroup_name"
+        [String]$type_indicator = "ips"
+        if ($secgroup_name -match '(\S+)\s*\((IPSET|GROUP|SEGMENT|VM)\)') {
+            switch ($Matches[2]) {
+                ("SEGMENT") { $type_indicator = "nsm" }
+                ("GROUP")   { $type_indicator = "nest" }
+                ("VM")      { $type_indicator = "vm" }
+            }
+            $secgroup_name = $Matches[1]
+        };  return "${tenant}_grp-$type_indicator-$secgroup_name"
     }
     [String] QualifiedServiceName ([String]$service_name, [String]$tenant) {
         return "${tenant}_svc-$service_name"

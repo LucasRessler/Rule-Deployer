@@ -126,27 +126,27 @@ function Get-RulesConfig ([Hashtable]$config) {
             sources = @{
                 dbg_name = "NSX-Source"
                 regex_info = "Please use a Security Group Name or 'any'"
-                regex = $config.regex.group_name
+                regex = $config.regex.security_group_reference
                 is_array = $true
                 postparser = { param($value) ParseArrayWithAny $value }
                 subparser = {
                     param($value)
-                    FailOnMatch $value $config.regex.ip_cidr (Format-Error `
+                    ParseSecgroupReference (FailOnMatch $value $config.regex.ip_cidr (Format-Error `
                         -Message "Literal ip-addresses are not supported" `
-                        -Hints @("Please use a Security Group Name or 'any'"))
+                        -Hints @("Please use a Security Group Name or 'any'")))
                 }
             }
             destinations = @{
                 dbg_name = "NSX-Destination"
                 regex_info = "Please use a Security Group Name or 'any'"
-                regex = $config.regex.group_name
+                regex = $config.regex.security_group_reference
                 is_array = $true
                 postparser = { param($value) ParseArrayWithAny $value }
                 subparser = {
                     param($value)
-                    FailOnMatch $value $config.regex.ip_cidr (Format-Error `
+                    ParseSecgroupReference (FailOnMatch $value $config.regex.ip_cidr (Format-Error `
                         -Message "Literal ip-addresses are not supported" `
-                        -Hints @("Please use a Security Group Name or 'any'"))
+                        -Hints @("Please use a Security Group Name or 'any'")))
                 }
             }
             services = @{
@@ -201,7 +201,7 @@ function Get-RulesConfig ([Hashtable]$config) {
             "t0_internet"
             "t1_payload"
         )
-        json_nesting = @("gateway", "request_id", "index")
+        json_nesting = @("gateway", "cis_id", "index")
         resource_name = "Firewall Rule"
         field_name = "rules"
         excel_sheet_name = $config.excel_sheetnames.rules

@@ -57,8 +57,9 @@ function Get-Config ([String]$conf_path) {
             }
         }
         regex = @{
-            service_reference = "[A-Za-z0-9 _.-]+"
             group_name = "[A-Za-z0-9_.-]+"
+            service_reference = "[A-Za-z0-9, ()_.-]+"
+            security_group_reference = "(?i)[a-z0-9_.-]+(\s*\((ipset|group|segment|vm)\))?"
             request_id = "[A-Za-z]+\d+"
             ip_addr = $regex_ip
             ip_cidr = "$regex_ip(/$regex_cidr)?"         # ip or ip/cidr
