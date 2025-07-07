@@ -1,3 +1,4 @@
 config.json
 nsx_image.json
 logs
+.env
