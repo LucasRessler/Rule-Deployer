@@ -1,7 +1,5 @@
 function Join ([Object[]]$arr, [String]$delim) {
-    [String]$s = ""
-    foreach ($x in $arr) { if ($x) { $s += "$(if ($s) {$delim})$x" } }
-    return $s
+    return ($arr | Where-Object { $_ }) -join $delim
 }
 
 function Format-List ([Object[]]$arr, [String]$con = "and") {
@@ -20,9 +18,6 @@ function Format-Error {
 
 function PrintDivider {
     Write-Host "------------------------"
-}
-
-function ShowPercentage ([Int]$i, [Int]$total) {
 }
 
 function ForEachWithPercentage {
@@ -88,17 +83,6 @@ function ConvertTo-Hashtable {
         }
         ConvertRecursive $input_object
     }
-}
-
-function Assert-Format ($x, [Hashtable]$format, $parent = $null) {
-    [String[]]$faults = @()
-    foreach ($key in $format.Keys) {
-        $fullname = Join @($parent, $key) "."
-        if ($null -eq $x.$key) { $faults += "Missing field '$fullname'"; continue }
-        if ("" -eq $x.$key) { $faults += "Field '$fullname' is empty"}
-        $faults += Assert-Format $x.$key $format.$key $fullname
-    }
-    return $faults
 }
 
 function DeepCopy ([Hashtable]$source) {
@@ -194,6 +178,7 @@ function Get-BasicAuthHeader {
     return @{ Authorization = "Basic $([Convert]::ToBase64String($bytes))" }
 }
 
+# Sadly necessary for many of our internal APIs
 function Initialize-SessionSecurity {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     if (-not ("TrustAllCertsPolicy" -as [type])) {
