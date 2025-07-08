@@ -187,3 +187,25 @@ function CustomConvertToJson {
         default { return "${out}$($obj.ToString() | ConvertTo-Json -Depth 1)"}
     }
 }
+
+function Get-BasicAuthHeader {
+    param([String]$user, [String]$pswd)
+    $bytes = [System.Text.Encoding]::ASCII.GetBytes("${user}:${pswd}")
+    return @{ Authorization = "Basic $([Convert]::ToBase64String($bytes))" }
+}
+
+function Initialize-SessionSecurity {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    if (-not ("TrustAllCertsPolicy" -as [type])) {
+        Add-Type @"
+using System.Net;
+using System.Security.Cryptography.X509Certificates;
+public class TrustAllCertsPolicy : ICertificatePolicy {
+    public bool CheckValidationResult(ServicePoint srvPoint, X509Certificate certificate, WebRequest request, int certificateProblem) {
+        return true;
+    }
+}
+"@
+    }
+    [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+}
