@@ -1,19 +1,84 @@
-function Get-Config ([String]$conf_path) {
-    # Assert that the config file has the right format
-    try { $config = Get-Content $conf_path -ErrorAction Stop | ConvertFrom-Json }
-    catch { throw Format-Error -Message "The config could not be loaded" -cause $_.Exception.Message }
-    $faults = Assert-Format $config @{
-        nsx_image_path = @{}
-        catalog_ids = @{ security_groups = @{}; services = @{}; rules = @{} }
-        excel_sheetnames = @{ security_groups = @{}; services = @{}; rules = @{} }
+using module ".\logger.psm1"
+using module ".\utils.psm1"
+
+function merge {
+    param ([Ref]$uk, [Ref]$ev, [Hashtable]$t, [Hashtable]$i, [String[]]$ks, [String]$p)
+    foreach ($k in $t.Keys) {
+        [String]$fk = "$p$k"
+        if (-not $t[$k]) { if ($ev) { $ev.Value += $fk }; continue }
+        if ($ks -and $fk -notin $ks) { if ($uk) { $uk.Value += $fk }; continue }
+        if ($i[$k] -is [Hashtable] -xor $t[$k] -is [Hashtable]) { continue }
+        if ($i[$k] -isnot [Hashtable]) { $i[$k] = $t[$k]; continue }
+        merge -uk $uk -ev $ev -t $t[$k] -i $i[$k] -ks $ks -p "$fk."
     }
-    if ($faults) {
-        throw Format-Error `
-            -Message "The config didn't match the expected format" `
-            -Hints $faults
+}
+
+function register {
+    param ([Ref]$ks, [Hashtable]$t, [String]$p)
+    foreach ($k in $t.Keys) {
+        [String]$fk = "$p$k"
+        if ($fk -notin $ks.Value) { $ks.Value += $fk }
+        if ($t[$k] -is [Hashtable]) { register $ks $t[$k] "$fk." }
+    }
+}
+
+function find_empty_vals {
+    param ([Ref]$rk, [Hashtable]$t, [String]$p)
+    foreach ($k in $t.Keys) {
+        [String]$fk = "$p$k"
+        if ($t[$k] -is [Hashtable]) { find_empty_vals $rk $t[$k] "$fk." }
+        elseif (-not $t[$k]) { $rk.Value += $fk }
+    }
+}
+
+function Get-Config {
+    param (
+        [String]$config_path,
+        [Hashtable]$fully_optional,
+        [Hashtable]$overrides,
+        [Hashtable]$defaults,
+        [Logger]$logger
+    )
+
+    # Load config from file
+    try { $file_config = Get-Content $config_path -ErrorAction Stop | ConvertFrom-Json | ConvertTo-Hashtable }
+    catch { throw Format-Error -Message "The config could not be loaded" -cause $_.Exception.Message }
+
+    # Keep track  of known keys
+    [String[]]$known_keys = @()
+    foreach ($table in @($fully_optional, $overrides, $defaults)) { register ([Ref]$known_keys) $table }
+
+    # Merge config file values into defaults, keep track of unknown keys and empty values
+    [String[]]$unknown_keys = @(); [String[]]$empty_values = @()
+    merge -uk ([Ref]$unknown_keys) -ev ([Ref]$empty_values) -t $file_config -i $defaults -ks $known_keys
+
+    # Merge cli overrides into defaults
+    merge -t $overrides -i $defaults
+
+    # Find empty values in defaults
+    [String[]]$empty_required = @()
+    find_empty_vals -rk ([Ref]$empty_required) -t $defaults
+
+    # Warn about unknown keys and empty values
+    foreach ($k in $unknown_keys) { $logger.Warn("Unknown key in ${config_path}: $k") }
+    foreach ($k in $empty_values) { $logger.Warn("Empty value in ${config_path}: $k") }
+
+    # Trhow on any empty required values
+    if ($empty_required.Count) { throw Format-Error `
+        -Message "Some config values were required but not defined or not scalar values" `
+        -Hints $empty_required
     }
 
+    # Merge fully optuional values into defaults
+    merge -t $fully_optional -i $defaults
+    return $defaults
+}
+
+function SaturateConfig {
+    param ([Hashtable]$config)
+
     # Fetch Vra Credentials and Host Url
+    [String]$VRAHostName = $config.VraHostName
     if ($null -eq (Get-Module -Name "shared_functions" -ErrorAction SilentlyContinue)) { Import-Module "$PSScriptRoot\shared_functions.ps1" }
     $catalogOptionsVraHostnames = Get-CatalogOptions -Scope "FCI_SHARED" -Query "/*/HOSTNAME" -ErrorAction Stop
     $catalogOptionsVraHostnameKey = ($catalogOptionsVraHostnames.raw.GetEnumerator() | Where-Object { $VRAHostName -match $_.KEY1 }).KEY1
