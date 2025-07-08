@@ -104,7 +104,8 @@ function SaturateConfig {
     $regex_u16_range = "$regex_u16(\s*-\s*$regex_u16)?"                                      # u16 or u16-u16
 
     return @{
-        nsx_image_path = $config.nsx_image_path
+        nsx_host_domain = $config.NsxHostDomain
+        nsx_image_path = $config.NsxImagePath
         log_directory = $config.log_directory
         excel_sheetnames = $config.excel_sheetnames
         api = @{
