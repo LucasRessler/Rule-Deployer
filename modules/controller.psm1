@@ -22,7 +22,8 @@ function GetAndParseResourceData {
     # Get Raw Data
     $logger.section = "Load"
     $logger.Info("Loading data for $($resource_config.resource_name)s...")
-    [DataPacket[]]$intermediate_data = $io_handle.GetResourceData($resource_config)
+    try { [DataPacket[]]$intermediate_data = $io_handle.GetResourceData($resource_config) }
+    catch { $intermediate_data = @(); $logger.Error($_.Exception.Message) }
     foreach ($data_packet in $intermediate_data) { $logger.Debug("Found data at $($data_packet.origin_info)") }
     [Int]$num_data = $intermediate_data.Count
     $summary[$resource_config.resource_name] = @{ total = $num_data }
@@ -113,19 +114,8 @@ function StartController {
         }
     }
 
-    # Very dangerously trusting all Certs - sadly necessary
-    if (!"TrustAllCertsPolicy" -as [type]) {
-        Add-Type @"
-using System.Net;
-using System.Security.Cryptography.X509Certificates;
-public class TrustAllCertsPolicy : ICertificatePolicy {
-    public bool CheckValidationResult(ServicePoint srvPoint, X509Certificate certificate, WebRequest request, int certificateProblem) {
-    return true;
-    }
-}
-"@  }; [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
-
     # Create Api Handle
+    Initialize-SessionSecurity
     $logger.Info("Initialising communication with API...")
     [ApiHandle]$api_handle = [ApiHandle]::New($config); $api_handle.Init() # might throw
 
@@ -244,6 +234,7 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
 
     # Cleanup
     [Int]$ret = 0; [Int]$total = 0; [Int]$parsed = 0; [Int]$successful = 0
+    [String]$performed_actions = Format-List ($actions | ForEach-Object { "${_}d".ToLower() }) "or"
     [String]$performed_actions = Format-List ($actions | ForEach-Object { "${_}d".ToLower() }) "or"
     [String[]]$summaries = $summary.Keys | ForEach-Object {
         $total += [Int]$summary[$_].total; $parsed += [Int]$summary[$_].parsed; $successful += [Int]$summary[$_].successful
