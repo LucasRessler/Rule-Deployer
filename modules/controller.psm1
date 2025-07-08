@@ -189,7 +189,7 @@ function StartController {
             # Without the Api, we can still make a guess based on the Nsx Image
             $logger.Info("Comparing Resources with NSX Image...")
             $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Create, [ApiAction]::Update))
-            $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Update, [Apiaction]::Create))
+            $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Update, [ApiAction]::Create))
             foreach ($data_packet in $to_deploy) {
                 [Bool]$img_exists = $null -ne $io_handle.GetImage($data_packet.GetImageKeys())
                 if ($img_exists) { $deploy_buckets[1].to_deploy += $data_packet }
@@ -234,7 +234,6 @@ function StartController {
 
     # Cleanup
     [Int]$ret = 0; [Int]$total = 0; [Int]$parsed = 0; [Int]$successful = 0
-    [String]$performed_actions = Format-List ($actions | ForEach-Object { "${_}d".ToLower() }) "or"
     [String]$performed_actions = Format-List ($actions | ForEach-Object { "${_}d".ToLower() }) "or"
     [String[]]$summaries = $summary.Keys | ForEach-Object {
         $total += [Int]$summary[$_].total; $parsed += [Int]$summary[$_].parsed; $successful += [Int]$summary[$_].successful

@@ -64,7 +64,7 @@ function Get-Config {
     foreach ($k in $unknown_keys) { $logger.Warn("Unknown key in ${config_path}: $k") }
     foreach ($k in $empty_values) { $logger.Warn("Empty value in ${config_path}: $k") }
 
-    # Trhow on any empty required values
+    # Throw on any empty required values
     if ($empty_required.Count) { throw Format-Error `
         -Message "Some config values were required but not defined or not scalar values" `
         -Hints $empty_required
