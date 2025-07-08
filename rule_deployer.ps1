@@ -10,19 +10,29 @@ using module ".\modules\utils.psm1"
 
 [CmdletBinding()]
 param (
-    [String]$Action,
-    [String]$Tenant,
+    # One of these input methods is required
     [String]$InlineJson,
     [String]$ExcelFilePath,
-    [String]$RequestId,
-    [String]$VRAHostName,
-    [String]$NSXHostDomain,
-    [String]$LogDir = "$PSScriptRoot\logs",
-    [String]$ConfigPath = "$PSScriptRoot\config.json"
+
+    # CLI only
+    [String]$Action,        # Always required
+    [String]$Tenant,        # Required for Excel-Input
+    [String]$RequestId,     # Optional, injects Request-ID
+
+    # Cli only with default
+    [String]$ConfigPath = "$PSScriptRoot\config.json",
+    
+    # CLI or Config
+    [String]$VraHostName,   # Required, no default
+    [String]$NsxHostDomain, # Fully optional
+    [String]$NsxImagePath,  # Provides default
+    [String]$EnvFile,       # Provides default
+    [String]$LogDir         # Provides default
 )
 
 . "$PSScriptRoot\modules\get_config.ps1"
 . "$PSScriptRoot\modules\resource_configs.ps1"
+
 
 function GetAndParseResourceData {
     param (
@@ -78,7 +88,7 @@ enum InputMethod {
 
 function Main {
     param (
-        [String]$conf_path,
+        [Hashtable]$base_config,
         [String]$tenant,
         [String]$request_id,
         [String]$inline_json,
@@ -87,7 +97,6 @@ function Main {
         [Logger]$logger
     )
 
-    $logger.section = "Setup"
     # Figure out Input Method
     [InputMethod]$input_method = if ($inline_json -and -not $excel_file_path) { [InputMethod]::Json }
     elseif ($excel_file_path -and -not $inline_json) {
@@ -95,9 +104,8 @@ function Main {
         else { [InputMethod]::Excel }
     } else { throw "Please use either the InlineJson-argument or the ExcelFilePath-argument to supply input" }
 
-    # Load Config
-    $logger.Info("Loading config from '$conf_path'...")
-    [Hashtable]$config = Get-Config $conf_path # might throw
+    # Saturate Config
+    [Hashtable]$config = SaturateConfig $base_config # might throw
     [Hashtable[][]]$resource_config_groups = @(
         @((Get-SecurityGroupsConfig $config), (Get-ServicesConfig $config)),
         @((Get-RulesConfig $config))
@@ -275,27 +283,67 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
 }
 
 # --- Program Flow ---
+# Initialise Logger
+[Logger]$logger = [Logger]::New($Host.UI)
+[String]$log_filename = "ruledeployer_$(Get-Date -Format "yyyy-MM-dd_HH-mm-ss").log"
+$logger.Debug("I was invoked with '$($MyInvocation.Line)'")
+
+$logger.section = "Setup"
+$logger.Info("Loading Config from $ConfigPath...")
+
+# Load Config
+try {
+    [Hashtable]$config = Get-Config  -overrides @{
+        VraHostName = $VraHostName
+        NsxImagePath = $NsxImagePath
+        EnvFile = $EnvFile
+        LogDir = $LogDir
+    } -defaults @{
+        NsxImagePath = "$PSScriptRoot\nsx_image.json"
+        EnvFile = "$PSScriptRoot\.env"
+        LogDir = "$PSScriptRoot\logs"
+        excel_sheetnames = @{
+            security_groups = "SecurityGroups"
+            services = "Services"
+            rules = "Rules"
+        }
+        catalog_ids = @{
+            security_groups = $null
+            services = $null
+            rules = $null
+        }
+    } -fully_optional @{
+        NsxHostDomain = $NsxHostDomain
+    } -config_path $ConfigPath -logger $logger
+} catch {
+    $logger.Error((Format-Error `
+        -Message "Error Loading Config from $ConfigPath" `
+        -Cause $_.Exception.Message))
+    $logger.Save($log_filename)
+    exit 666
+}
+
 # Load Env Vars
-Get-Content -Path "$PSScriptRoot\.env" | ForEach-Object {
-    if ($_ -match '^\s*(#.*)?$') { return }
-    [String[]]$parts = $_ -split '=', 2
-    if ($parts.Count -eq 2) {
-        $name = $parts[0].Trim()
-        $value = $parts[1].Trim()
-        [System.Environment]::SetEnvironmentVariable($name, $value, "Process")
+if ($null -ne (Get-Item -Path $config.EnvFile)) {
+    Get-Content -Path $config.EnvFile | ForEach-Object {
+        if ($_ -match '^\s*(#.*)?$') { return }
+        [String[]]$parts = $_ -split '=', 2
+        if ($parts.Count -eq 2) {
+            $name = $parts[0].Trim()
+            $value = $parts[1].Trim()
+            [System.Environment]::SetEnvironmentVariable($name, $value, "Process")
+        }
     }
 }
 
-# Initialise Logger
-[Logger]$logger = [Logger]::New($Host.UI)
-[String]$LogPath = "$LogDir\ruledeployer_$(Get-Date -Format "yyyy-MM-dd_HH-mm-ss").log"
-New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
-$logger.Debug("I was invoked with '$($MyInvocation.Line)'")
+# Ensure LogPath exists
+[String]$LogPath = "$($config.LogDir)\$log_filename"
+New-Item -ItemType Directory -Path $config.LogDir -Force | Out-Null
 $logger.Debug("Log-Output has been set to '$LogPath'")
 
 # Call Main Function
 [Hashtable]$main_params = @{
-    conf_path = $ConfigPath 
+    base_config = $config
     tenant = $Tenant 
     request_id = $RequestId
     inline_json = $InlineJson 
