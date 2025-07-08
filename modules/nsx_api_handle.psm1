@@ -1,4 +1,5 @@
 using module ".\shared_types.psm1"
+using module ".\utils.psm1"
 
 class NsxApiHandle {
     [String]$base_url
@@ -9,12 +10,7 @@ class NsxApiHandle {
         if (-not $base_url)         { throw "NSX Host Domain was not provided" }
         if (-not $env:nsx_user)     { throw "NSX Username was not provided" }
         if (-not $env:nsx_password) { throw "NSX Password was not provided" }
-        [Byte[]]$bytes = [System.Text.Encoding]::UTF8.GetBytes("${env:nsx_user}:${env:nsx_password}")
-        [String]$encoded = [Convert]::ToBase64String($bytes) 
-        $this.base_url = $base_url
-        $this.headers = @{
-            Authorization = "Basic $encoded"
-        }
+        $this.headers = Get-BasicAuthHeader -user $env:nsx_user -pswd $env:nsx_password
     }
 
     [PSCustomObject] ApiGet ([String]$path) {
