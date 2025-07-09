@@ -1,12 +1,12 @@
 # Rule Deployer
 
-**Rule Deployer** is an internal T-Systems tool that streamlines the deployment of NSX Security Groups, Services, and Firewall Rules, specific to FCI.
+**Rule Deployer** is a PowerShell tool that streamlines the deployment of NSX Security Groups, Services, and Firewall Rules, specific to FCI.
 
 It supports both JSON-based and Excel-based input formats, and automates conversion into the necessary API calls for deployment.
 
 The tool pre-parses values that require special formatting, performs preemptive integrity checks, and logs detailed error messages to catch mistakes before deployment.
 
-> **Note**: Due to API limitations, bulk operations are not supported. All resources are deployed sequentially, which may increase execution time.
+> **Note**: Due to VRA API limitations, bulk operations are not supported. All resources are deployed sequentially, which may increase execution time.
 
 ## 📦 Quick Start
 
@@ -37,25 +37,41 @@ The tool pre-parses values that require special formatting, performs preemptive 
 
 ## ⚙️ Configuration
 
-<TODO>Description of Configuration</TODO>
+Rule Deployer can be configured with a `config.json` file.
+
+This file provides a centralized way to manage default values, paths, and catalog configuration -
+especially useful in automated pipelines or when using the tool repeatedly in the same environment.
+
+> 💡 Many of these values can also be set directly with CLI input-parameters.
+> In this case, the CLI-arguments take priority over the configured values.
 
 ### Configuration File Format:
 
 ```jsonc
 {
-  "nsx_image_path": "<ScriptRoot>/nsx_image.json",
+  "EnvFile": "path/to/.env_file",           // Default: <ScriptRoot>/.env
+  "NsxImagePath": "path/to/nsx_image",      // Default: <ScriptRoot>/nsx_image.json
+  "LogDir": "path/to/log_output_directory", // Default: <ScriptRoot>/logs/
+
+  "VraHostName": "name-of-vra-host",       // No Default, Required
+  "NsxHostDomain": "https://nsx.host.url", // No Default, Optional
+
   "excel_sheetnames": {
-    "security_groups": "SecurityGroups",
-    "services": "Services",
-    "rules": "Rules"
+    "security_groups": "SecurityGroups-SheetName", // Default: SecurityGroups
+    "services": "Services-SheetName",              // Default: Services
+    "rules": "FirewallRules-SheetName"             // Default: Rules
   },
+
   "catalog_ids": {
-    "security_groups": "No Default Value",
-    "services": "No Default Value",
-    "rules": "No Default Value"
+    "security_groups": "SecurityGroups-VRA-Catalog-ID", // No Default, Required
+    "services": "Services-VRA-Catalog-ID",              // No Default, Required
+    "rules": "FirewallRules-VRA-Catalog-ID"             // No Default, Required
   }
 }
 ```
+
+> 📌 `NsxHostDomain` is entirely optional, but strongly recommended, if accessing the underlying NSX-infrastructure is a possibility.
+> Providing this together with NSX-specific environment variables greatly improves the reliability of resource integrity checks.
 
 ---
 
@@ -87,7 +103,7 @@ nsx_user="{nsx-username}"
 nsx_password="{nsx-password}"
 ```
 
-Providing these improves reliability of certain integrity checks.
+> 📌 Providing these together with the `NsxHostDomain` config-value greatly improves the reliability of resource integrity checks.
 
 ---
 
@@ -111,37 +127,39 @@ These differences are noted where applicable.
 
 ### 🔐 Security Groups
 
-| Field            | Required                     | JSON Field        | Format                              | Notes                             |
-| ---------------- | ---------------------------- | ----------------- | ----------------------------------- | --------------------------------- |
-| **IP-Addresses** | ✅ Required for Create/Update | `ip_addresses`    | `IPv4` or `IPv4/CIDR`               | Multiple allowed                  |
-| **Hostname**     | ❌ Optional                   | `hostname`        | Any string                          | Multiple allowed                  |
-| **Comment**      | ❌ Optional                   | `comment`         | Any string                          | One only                          |
-| **Request ID**   | ❌ Optional                   | `request_id`      | `SCTASK1234567`, `INC1234567`, etc. | First = create ID, rest = updates |
-| **Update IDs**   | ❌ Optional                   | `update_requests` | Same format as above                | Alternative field for updates     |
+| Field            | Required                      | JSON Field        | Format                                    | Notes                      |
+| ---------------- | ----------------------------- | ----------------- | ----------------------------------------- | -------------------------- |
+| **Name**         | ✅ Always Required            | `name`            | String of letters, numbers, `.`, `-`, `_` | Identifier; must be unique |
+| **IP-Addresses** | ✅ Required for Create/Update | `ip_addresses`    | `IPv4` or `IPv4/CIDR`                     | Multiple allowed           |
+| **Hostname**     | ❌ Optional                   | `hostname`        | Any string                                | Multiple allowed           |
+| **Comment**      | ❌ Optional                   | `comment`         | Any string                                | One only                   |
+| **Request ID**   | ❌ Optional                   | `request_id`      | `SCTASK1234567`, `INC1234567`, etc.       | One only                   |
+| **Update IDs**   | ❌ Optional                   | `update_requests` | Same format as Request ID                 | Multiple allowed           |
 
 ### ⚙️ Services
 
-| Field          | Required                     | JSON Field        | Format                                            | Notes                                     |
-| -------------- | ---------------------------- | ----------------- | ------------------------------------------------- | ----------------------------------------- |
+| Field          | Required                      | JSON Field        | Format                                            | Notes                                     |
+| -------------- | ----------------------------- | ----------------- | ------------------------------------------------- | ----------------------------------------- |
+| **Name**       | ✅ Always Required            | `name`            | String of letters, numbers, `.`, `-`, `_`         | Identifier; must be unique                |
 | **Ports**      | ✅ Required for Create/Update | `ports`           | `<protocol>:<port>` or `<protocol>:<start>-<end>` | Protocols: `tcp`, `udp`; multiple allowed |
 | **Comment**    | ❌ Optional                   | `comment`         | Any string                                        | One only                                  |
-| **Request ID** | ❌ Optional                   | `request_id`      | Same as Security Groups                           |                                           |
-| **Update IDs** | ❌ Optional                   | `update_requests` | Same format                                       |                                           |
+| **Request ID** | ❌ Optional                   | `request_id`      | `SCTASK1234567`, `INC1234567`, etc.               | One only                                  |
+| **Update IDs** | ❌ Optional                   | `update_requests` | Same format as Request ID                         | Multiple allowed                          |
 
 > 🔸 ICMP is not supported. Use predefined NSX ICMP Services (e.g. "ICMP ALL", "ICMP Echo Request").
 
 
 ### 🔥 Firewall Rules
 
-| Field            | Required                     | JSON Field        | Format                                          | Notes                              |
-| ---------------- | ---------------------------- | ----------------- | ----------------------------------------------- | ---------------------------------- |
+| Field            | Required                      | JSON Field        | Format                                          | Notes                              |
+| ---------------- | ----------------------------- | ----------------- | ----------------------------------------------- | ---------------------------------- |
 | **Index**        | ✅ Always Required            | `index`           | Numeric                                         | Differentiates rules per CIS ID    |
 | **Sources**      | ✅ Required for Create/Update | `sources`         | Alphanumeric / `any`                            | Multiple allowed                   |
-| **Destinations** | ✅ Required for Create/Update | `destinations`    | Same as Sources                                 |                                    |
+| **Destinations** | ✅ Required for Create/Update | `destinations`    | Same as Sources                                 | Multiple allowed                   |
 | **Services**     | ✅ Required for Create/Update | `services`        | Same as Sources                                 | Refers to defined/default Services |
 | **Comment**      | ❌ Optional                   | `comment`         | Any string                                      | One only                           |
-| **Request ID**   | ❌ Optional                   | `request_id`      | Same as other types                             | First = initial, others = updates  |
-| **Update IDs**   | ❌ Optional                   | `update_requests` | Same format                                     |                                    |
+| **Request ID**   | ❌ Optional                   | `request_id`      | Same as other types                             | One only                           |
+| **Update IDs**   | ❌ Optional                   | `update_requests` | Same format                                     | Multiple allowed                   |
 | **Gateway**      | ❌ Optional                   | `gateway`         | One or both of: `"T0 Internet"`, `"T1 Payload"` | See notes below                    |
 
 > ⚠️ In Excel input, **Gateways** are selected using **two separate boolean-style fields**:
@@ -149,7 +167,8 @@ These differences are noted where applicable.
 
 > 🚪 If no **Gateway** is specified, `T1 Payload` is chosen by default.
 
-> 🧠 A rule’s identity is defined by its **Tenant + CIS ID + Index + Gateway**. Multiple rules may share CIS ID and Index as long as one of these differs.
+> 🧠 A rule’s identity is defined by its **Tenant + CIS ID + Index + Gateway**.
+> Multiple rules may share CIS ID and Index as long as one of these differs.
 
 ---
 
@@ -158,7 +177,7 @@ These differences are noted where applicable.
 Use the `-InlineJson` parameter to pass a JSON string defining your resources.
 The JSON input supports two structurally equivalent styles: **flat** and **nested**.
 
-> 📌 You can define multiple tenants within a single JSON string.
+> 💡 You can define multiple tenants within a single JSON string.
 > Alternatively, if you're using the `-Tenant` parameter, omit tenant names and provide top-level resource keys instead.
 
 ### 🧱 JSON Structure Overview
@@ -166,6 +185,11 @@ The JSON input supports two structurally equivalent styles: **flat** and **neste
 ```jsonc
 {
   "tenant_name": {
+    "security_groups": "...",
+    "services": "...",
+    "rules": "..."
+  },
+  "other_tenant_name": {
     "security_groups": "...",
     "services": "...",
     "rules": "..."
@@ -283,14 +307,9 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 - `Services`
 - `Rules`
 
-> The worksheet names can be customized via the config file (`excel_sheetnames`).
-
 > ⚠️ If a required worksheet is missing, an error will be logged - but processing will continue with any remaining valid sheets.
 
-### ✅ Worksheet Requirements
-- Column order matters - **header names don’t**.
-- Last column in each sheet is **reserved for output**.
-- Rows with non-empty output field are **skipped**.
+> The worksheet names can be customized via the config file (`excel_sheetnames`).
 
 ```jsonc
 // Example config override
@@ -302,6 +321,11 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
   }
 }
 ```
+
+### ✅ Worksheet Requirements
+- Column order matters - **header names don’t**.
+- Last column in each sheet is **reserved for output**.
+- Rows with non-empty output field are **skipped**.
 
 ### 🔍 Input Behavior Differences
 | Feature            | JSON                   | Excel                            |
