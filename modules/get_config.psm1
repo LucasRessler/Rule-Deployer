@@ -80,19 +80,23 @@ function SaturateConfig {
 
     # Fetch Vra Credentials and Host Url
     [String]$VRAHostName = $config.VraHostName
-    $catalogOptionsVraHostnames = Get-CatalogOptions -Scope "FCI_SHARED" -Query "/*/HOSTNAME" -ErrorAction Stop
-    $catalogOptionsVraHostnameKey = ($catalogOptionsVraHostnames.raw.GetEnumerator() | Where-Object { $VRAHostName -match $_.KEY1 }).KEY1
-    $catalogOptionsVra = Get-CatalogOptions -Scope "FCI_SHARED" -Query "/$catalogOptionsVraHostnameKey" -ErrorAction Stop
-    $VraSpecs = [PSCustomObject]@{
+    try { $catalogOptionsVraHostnames = Get-CatalogOptions -Scope "FCI_SHARED" -Query "/*/HOSTNAME" -ErrorAction Stop }
+    catch { throw Format-Error -Message "Failed to get catalog options" -Cause $_.Exception.Message }
+    [String]$catalogOptionsVraHostnameKey = ($catalogOptionsVraHostnames.raw.GetEnumerator() | Where-Object { $VRAHostName -match $_.KEY1 }).KEY1
+    try { $catalogOptionsVra = Get-CatalogOptions -Scope "FCI_SHARED" -Query "/$catalogOptionsVraHostnameKey" -ErrorAction Stop }
+    catch { throw Format-Error -Message "Failed to get catalog options for $catalogOptionsVraHostnameKey" -Cause $_.Exception.Message }
+    [PSCustomObject]$VraSpecs = [PSCustomObject]@{
 	    svcname = $catalogOptionsVraHostnameKey     
 	    vchost  = ($catalogOptionsVra.raw.GetEnumerator() | Where-Object { $_.KEY2 -eq 'HOSTNAME' }).VALUE		
         vcuser  = ($catalogOptionsVra.raw.GetEnumerator() | Where-Object { $_.KEY2 -eq 'XAUTO_USER' }).VALUE
 	    sso_domain = ($catalogOptionsVra.raw.GetEnumerator() | Where-Object { $_.KEY2 -eq 'SSO_DOMAIN' }).VALUE 
     }
     if (!$VraSpecs.svcname) { throw "Unable to load FCI VRA specs for $VRAHostName from CatalogOptions. :-(" }
-    $CmdbData = Get-CMDBService -ServiceName $($VraSpecs.svcname)
+    try { $CmdbData = Get-CMDBService -ServiceName $($VraSpecs.svcname) }
+    catch { throw Format-Error -Message "Failed to get $($VraSpecs.svcname) from CMDB" -Cause $_.Exception.Message }
     if (!$CmdbData['0'].SVCID) { throw "Unable to get SVCID of FCI VRA $VRA HostName from CMDB. :-(" }
-    $VraCredentials = Get-RMDBCredentials -CmdbId $CmdbData['0'].SVCID -XaUser $VraSpecs.vcuser
+    try { $VraCredentials = Get-RMDBCredentials -CmdbId $CmdbData['0'].SVCID -XaUser $VraSpecs.vcuser }
+    catch { throw Format-Error -Message "Failed to get password for $($VraSpecs.vcuser) from RMDB" -Cause $_.Exception.Message }
     if (!$VraCredentials.data.password) { throw "Unable to get password for $($VraSpecs.vcuser) from RMDB. :-(" }
     
     # Build up complete Config
