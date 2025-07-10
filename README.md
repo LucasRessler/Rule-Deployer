@@ -270,7 +270,7 @@ Each resource group is an **array of objects**, one per resource.
 
 ```json
 {
-  "t001": {
+  "tenant_name": {
     "security_groups": [
       {
         "name": "secgroup_name1",
@@ -450,8 +450,8 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 5. NSX-Description
 6. Request ID
 7. CIS ID
-8. **T0 Internet**
-9. **T1 Payload**
+8. T0 Internet
+9. T1 Payload
 10. Output
 
 #### Notes:
