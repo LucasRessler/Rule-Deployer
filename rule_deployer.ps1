@@ -24,12 +24,14 @@ param (
     [String]$LogDir         # Provides default
 )
 
-# Initialise Logger
-[Logger]$logger = [Logger]::New($Host.UI)
-[String]$default_log_dir = "$PSScriptRoot\logs"
-[String]$log_filename = "ruledeployer_$(Get-Date -Format "yyyy-MM-dd_HH-mm-ss").log"
-[String]$LogPath = "$default_log_dir\$log_filename"
-$logger.Debug("I was invoked with '$($MyInvocation.Line)'")
+# Define Defaults
+[String]$DEFAULT_NSX_IMAGE_PATH = "$PSScriptRoot\nsx_image.json"
+[String]$DEFAULT_ENV_FILE_PATH = "$PSScriptRoot\.env"
+[String]$DEFAULT_LOG_DIR = "$PSScriptRoot\logs"
+
+[String]$DEFAULT_SECURITY_GROUPS_SHEETNAME = "Security Groups"
+[String]$DEFAULT_SERVICES_SHEETNAME = "Services"
+[String]$DEFAULT_RULES_SHEETNAME = "Rules"
 
 # Define Config Structure
 [Hashtable]$get_config_params = @{
@@ -37,14 +39,14 @@ $logger.Debug("I was invoked with '$($MyInvocation.Line)'")
     logger = $logger
 
     defaults = @{
-        NsxImagePath = "$PSScriptRoot\nsx_image.json"
-        EnvFile = "$PSScriptRoot\.env"
-        LogDir = $default_log_dir
+        NsxImagePath = $DEFAULT_NSX_IMAGE_PATH
+        EnvFile = $DEFAULT_ENV_FILE_PATH
+        LogDir = $DEFAULT_LOG_DIR
 
         excel_sheetnames = @{
-            security_groups = "SecurityGroups"
-            services = "Services"
-            rules = "Rules"
+            security_groups = $DEFAULT_SECURITY_GROUPS_SHEETNAME
+            services = $DEFAULT_SERVICES_SHEETNAME
+            rules = $DEFAULT_RULES_SHEETNAME
         }
 
         catalog_ids = @{
@@ -65,6 +67,12 @@ $logger.Debug("I was invoked with '$($MyInvocation.Line)'")
         NsxHostDomain = $NsxHostDomain
     }
 }
+
+# Initialise Logger
+[Logger]$logger = [Logger]::New($Host.UI)
+[String]$log_filename = "ruledeployer_$(Get-Date -Format "yyyy-MM-dd_HH-mm-ss").log"
+[String]$LogPath = ".\$log_filename"
+$logger.Debug("I was invoked with '$($MyInvocation.Line)'")
 
 # Load Config
 $logger.section = "Setup"
