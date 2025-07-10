@@ -204,24 +204,27 @@ These differences are noted where applicable.
 
 ### 🔥 Firewall Rules
 
-| Field            | Required                      | JSON Field        | Format                                          | Notes                              |
-| ---------------- | ----------------------------- | ----------------- | ----------------------------------------------- | ---------------------------------- |
-| **Index**        | ✅ Always Required            | `index`           | Numeric                                         | Differentiates rules per CIS ID    |
-| **Sources**      | ✅ Required for Create/Update | `sources`         | Alphanumeric / `any`                            | Multiple allowed                   |
-| **Destinations** | ✅ Required for Create/Update | `destinations`    | Same as Sources                                 | Multiple allowed                   |
-| **Services**     | ✅ Required for Create/Update | `services`        | Same as Sources                                 | Refers to defined/default Services |
-| **Comment**      | ❌ Optional                   | `comment`         | Any string                                      | One only                           |
-| **Request ID**   | ❌ Optional                   | `request_id`      | Same as other types                             | One only                           |
-| **Update IDs**   | ❌ Optional                   | `update_requests` | Same format                                     | Multiple allowed                   |
-| **Gateway**      | ❌ Optional                   | `gateway`         | One or both of: `"T0 Internet"`, `"T1 Payload"` | See notes below                    |
+| Field            | Required                      | JSON Field        | Format                                          | Notes                                  |
+| ---------------- | ----------------------------- | ----------------- | ----------------------------------------------- | -------------------------------------- |
+| **CIS ID**       | ✅ Always Required            | `cis_id`          | String of 4-8 digits                            | ID of associated CIS-request; One only |
+| **Index**        | ✅ Always Required            | `index`           | Numeric                                         | Differentiates rules per CIS ID        |
+| **Sources**      | ✅ Required for Create/Update | `sources`         | Alphanumeric / `any`                            | Multiple allowed                       |
+| **Destinations** | ✅ Required for Create/Update | `destinations`    | Same as Sources                                 | Multiple allowed                       |
+| **Services**     | ✅ Required for Create/Update | `services`        | Same as Sources                                 | Refers to defined/default Services     |
+| **Comment**      | ❌ Optional                   | `comment`         | Any string                                      | One only                               |
+| **Request ID**   | ❌ Optional                   | `request_id`      | Same as other types                             | One only                               |
+| **Update IDs**   | ❌ Optional                   | `update_requests` | Same format                                     | Multiple allowed                       |
+| **Gateway**      | ❌ Optional                   | `gateway`         | One or both of: `"T0 Internet"`, `"T1 Payload"` | See notes below                        |
 
 > ⚠️ In Excel input, **Gateways** are selected using **two separate boolean-style fields**:
-> `T0 Internet` and `T1 Payload`. If both are checked (non-empty), Rule is deployed for both.
+> `T0 Internet` and `T1 Payload`. If both are selected (non-empty), Rule is deployed for both.
 
 > 🚪 If no **Gateway** is specified, `T1 Payload` is chosen by default.
 
-> 🧠 A rule’s identity is defined by its **Tenant + CIS ID + Index + Gateway**.
+> 🧠 A rule’s identity is defined by its **Tenant + Gateway + CIS ID + Index**.
 > Multiple rules may share CIS ID and Index as long as one of these differs.
+
+> 🗯️ Rule names are automatically generated as `IDC<CIS-ID>_<Index>` (eg. `IDC12345_1`).
 
 ---
 
@@ -306,9 +309,12 @@ Each resource group is an **array of objects**, one per resource.
 
 Each group is an **object of objects**, using names or IDs as keys.
 
-```json
+- Security Groups and Services use their **names** keys.
+- Rules are grouped first by **gateway**, then **CIS ID**, then **index**.
+
+```jsonc
 {
-  "t001": {
+  "tenant_name": {
     "security_groups": {
       "secgroup_name1": {
         "ip_addresses": ["10.0.0.1", "10.0.0.20/24"],
@@ -325,9 +331,9 @@ Each group is an **object of objects**, using names or IDs as keys.
       }
     },
     "rules": {
-      "T0 Internet": {
-        "123456": {
-          "1": {
+      "T0 Internet": {   // Gateway
+        "123456": {      // CIS ID
+          "1": {         // Index
             "sources": ["secgroup_name1"],
             "destinations": ["secgroup_name1"],
             "services": ["service_name1"],
