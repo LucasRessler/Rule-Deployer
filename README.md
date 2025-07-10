@@ -10,13 +10,13 @@ The tool pre-parses values that require special formatting, performs preemptive 
 
 ## 📦 Quick Start
 
-### Minimal execution with JSON input:
+### Basic usage with JSON input:
 
 ```
 .\rule_deployer -InlineJson <JSON String> -Action { auto | create | update | delete }
 ```
 
-### Minimal execution with Excel input:
+### Basic usage with Excel input:
 
 ```
 .\rule_deployer -ExcelFilePath <Path to Excel workbook> -Tenant <Tenant name> -Action { auto | create | update | delete }
@@ -201,8 +201,8 @@ These differences are noted where applicable.
 | **Name**         | ✅ Always Required            | `name`            | String of letters, numbers, `.`, `-`, `_` | Identifier; must be unique |
 | **IP-Addresses** | ✅ Required for Create/Update | `ip_addresses`    | `IPv4` or `IPv4/CIDR`                     | Multiple allowed           |
 | **Hostname**     | ❌ Optional                   | `hostname`        | Any string                                | Multiple allowed           |
-| **Comment**      | ❌ Optional                   | `comment`         | Any string                                | One only                   |
-| **Request ID**   | ❌ Optional                   | `request_id`      | `SCTASK1234567`, `INC1234567`, etc.       | One only                   |
+| **Comment**      | ❌ Optional                   | `comment`         | Any string                                | One value only             |
+| **Request ID**   | ❌ Optional                   | `request_id`      | `SCTASK1234567`, `INC1234567`, etc.       | One value only             |
 | **Update IDs**   | ❌ Optional                   | `update_requests` | Same format as Request ID                 | Multiple allowed           |
 
 ### ⚙️ Services
@@ -211,8 +211,8 @@ These differences are noted where applicable.
 | -------------- | ----------------------------- | ----------------- | ------------------------------------------------- | ----------------------------------------- |
 | **Name**       | ✅ Always Required            | `name`            | String of letters, numbers, `.`, `-`, `_`         | Identifier; must be unique                |
 | **Ports**      | ✅ Required for Create/Update | `ports`           | `<protocol>:<port>` or `<protocol>:<start>-<end>` | Protocols: `tcp`, `udp`; multiple allowed |
-| **Comment**    | ❌ Optional                   | `comment`         | Any string                                        | One only                                  |
-| **Request ID** | ❌ Optional                   | `request_id`      | `SCTASK1234567`, `INC1234567`, etc.               | One only                                  |
+| **Comment**    | ❌ Optional                   | `comment`         | Any string                                        | One value only                            |
+| **Request ID** | ❌ Optional                   | `request_id`      | `SCTASK1234567`, `INC1234567`, etc.               | One value only                            |
 | **Update IDs** | ❌ Optional                   | `update_requests` | Same format as Request ID                         | Multiple allowed                          |
 
 > 🔸 ICMP is not supported. Use predefined NSX ICMP Services (e.g. "ICMP ALL", "ICMP Echo Request").
@@ -227,8 +227,8 @@ These differences are noted where applicable.
 | **Sources**      | ✅ Required for Create/Update | `sources`         | Alphanumeric / `any`                            | Refers to defined Security Groups; Multiple allowed  |
 | **Destinations** | ✅ Required for Create/Update | `destinations`    | Alphanumeric / `any`                            | Refers to defined Security Groups; Multiple allowed  |
 | **Services**     | ✅ Required for Create/Update | `services`        | Alphanumeric / `any`                            | Refers to defined/default Services; Multiple allowed |
-| **Comment**      | ❌ Optional                   | `comment`         | Any string                                      | One only                                             |
-| **Request ID**   | ❌ Optional                   | `request_id`      | Same as other types                             | One only                                             |
+| **Comment**      | ❌ Optional                   | `comment`         | Any string                                      | One value only                                       |
+| **Request ID**   | ❌ Optional                   | `request_id`      | Same as other types                             | One value only                                       |
 | **Update IDs**   | ❌ Optional                   | `update_requests` | Same format                                     | Multiple allowed                                     |
 | **Gateway**      | ❌ Optional                   | `gateway`         | One or both of: `"T0 Internet"`, `"T1 Payload"` | Defaults to `T1 Payload`                             |
 
