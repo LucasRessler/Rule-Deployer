@@ -157,19 +157,19 @@ The `.env` file will be auto-loaded at runtime.
 ### **Required Variables**
 
 ```env
-cmdb_user=NEO\{cmdb-username}
-cmdb_password={cmdb-password}
-catalogdb_user=neo\{catalogdb-username}
-catalogdb_password={catalogdb-password}
-rmdb_user={rmdb-username}
-rmdb_password={rmdb-password}
+cmdb_user=NEO\cmdb-username
+cmdb_password=cmdb-password
+catalogdb_user=neo\catalogdb-username
+catalogdb_password=catalogdb-password
+rmdb_user=rmdb-username
+rmdb_password=rmdb-password
 ```
 
 ### **Optional Variables**
 
 ```env
-nsx_user="{nsx-username}"
-nsx_password="{nsx-password}"
+nsx_user=nsx-username
+nsx_password=nsx-password
 ```
 
 > 📌 Providing these together with the `NsxHostDomain` config-value greatly improves the reliability of resource integrity checks and `-Action auto`.
