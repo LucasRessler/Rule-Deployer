@@ -86,10 +86,10 @@ function SaturateConfig {
     try { $catalogOptionsVra = Get-CatalogOptions -Scope "FCI_SHARED" -Query "/$catalogOptionsVraHostnameKey" -ErrorAction Stop }
     catch { throw Format-Error -Message "Failed to get catalog options for $catalogOptionsVraHostnameKey" -Cause $_.Exception.Message }
     [PSCustomObject]$VraSpecs = [PSCustomObject]@{
-	    svcname = $catalogOptionsVraHostnameKey     
-	    vchost  = ($catalogOptionsVra.raw.GetEnumerator() | Where-Object { $_.KEY2 -eq 'HOSTNAME' }).VALUE		
+        svcname = $catalogOptionsVraHostnameKey     
+        vchost  = ($catalogOptionsVra.raw.GetEnumerator() | Where-Object { $_.KEY2 -eq 'HOSTNAME' }).VALUE
         vcuser  = ($catalogOptionsVra.raw.GetEnumerator() | Where-Object { $_.KEY2 -eq 'XAUTO_USER' }).VALUE
-	    sso_domain = ($catalogOptionsVra.raw.GetEnumerator() | Where-Object { $_.KEY2 -eq 'SSO_DOMAIN' }).VALUE 
+        sso_domain = ($catalogOptionsVra.raw.GetEnumerator() | Where-Object { $_.KEY2 -eq 'SSO_DOMAIN' }).VALUE
     }
     if (!$VraSpecs.svcname) { throw "Unable to load FCI VRA specs for $VRAHostName from CatalogOptions. :-(" }
     try { $CmdbData = Get-CMDBService -ServiceName $($VraSpecs.svcname) }
