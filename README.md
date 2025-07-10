@@ -91,7 +91,7 @@ The script relies on a [configuration file](#️-configuration) and a few [envir
 | `-Tenant`        | ✅ Required** | ❌ Only via CLI           | -                             |
 | `-Action`        | ✅ Required   | ❌ Only via CLI           | -                             |
 | `-RequestId`     | ❌ Optional   | ❌ Only via CLI           | -                             |
-| `-ConfigPath`    | ❌ Optional   | ✅ Can be set in config   | `<ScriptRoot>\config.json`    |
+| `-ConfigPath`    | ❌ Optional   | ❌ Only via CLI           | `<ScriptRoot>\config.json`    |
 | `-EnvFile`       | ❌ Optional   | ✅ Can be set in config   | `<ScriptRoot>\.env`           |
 | `-NsxImagePath`  | ❌ Optional   | ✅ Can be set in config   | `<ScriptRoot>\nsx_image.json` |
 | `-LogDir`        | ❌ Optional   | ✅ Can be set in config   | `<ScriptRoot>\logs\`          |
@@ -398,10 +398,10 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 ```
 
 ### 🔍 Input Behavior Differences
-| Feature            | JSON                   | Excel                            |
-| ------------------ | ---------------------- | -------------------------------- |
-| Gateways (Rules)   | `gateway: [...]` field | Separate boolean-style columns   |
-| Multi-value fields | Arrays (`[]`)          | Line-break separated (Alt+Enter) |
+| Feature            | JSON                   | Excel                              |
+| ------------------ | ---------------------- | ---------------------------------- |
+| Gateways (Rules)   | `gateway: [...]` field | Separate boolean-style columns     |
+| Multi-value fields | Arrays (`[]`)          | Line-break separated (`Alt+Enter`) |
 
 ### 🧾 Worksheet Guidelines
 - **Column headers** must be present, but their names **don’t need to match exactly**. Only the **column order** matters.
