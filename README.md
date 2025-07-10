@@ -24,23 +24,23 @@ The tool pre-parses values that require special formatting, performs preemptive 
 
 ### 📋 Example Executions
 
-- #### 📘 Create resources from a JSON file
+- #### 📘 Create resources from a JSON file:
 
-```powershell
-.\rule_deployer -InlineJson (Get-Content '.\fw-rules.json' -Raw) -Action create
-```
+  ```powershell
+  .\rule_deployer -InlineJson (Get-Content '.\fw-rules.json' -Raw) -Action create
+  ```
 
-- #### 📗 Create or update resources from an Excel workbook
+- #### 📗 Create or update resources from an Excel workbook:
 
-```powershell
-.\rule_deployer -ExcelFilePath '.\FW-Rules.xlsx' -Tenant t001 -Action auto
-```
+  ```powershell
+  .\rule_deployer -ExcelFilePath '.\FW-Rules.xlsx' -Tenant t001 -Action auto
+  ```
 
-- #### 🗑️ Delete a specific service
+- #### 🗑️ Delete a specific service:
 
-```powershell
-.\rule_deployer -InlineJson '{"t001": {"services": [{"name": "unused-service"}]}}' -Action delete
-```
+  ```powershell
+  .\rule_deployer -InlineJson '{"t001": {"services": [{"name": "unused-service"}]}}' -Action delete
+  ```
 
 ---
 
