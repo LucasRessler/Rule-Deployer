@@ -26,7 +26,9 @@ param (
 
 # Initialise Logger
 [Logger]$logger = [Logger]::New($Host.UI)
+[String]$default_log_dir = "$PSScriptRoot\logs"
 [String]$log_filename = "ruledeployer_$(Get-Date -Format "yyyy-MM-dd_HH-mm-ss").log"
+[String]$LogPath = "$default_log_dir\$log_filename"
 $logger.Debug("I was invoked with '$($MyInvocation.Line)'")
 
 # Define Config Structure
@@ -37,7 +39,7 @@ $logger.Debug("I was invoked with '$($MyInvocation.Line)'")
     defaults = @{
         NsxImagePath = "$PSScriptRoot\nsx_image.json"
         EnvFile = "$PSScriptRoot\.env"
-        LogDir = "$PSScriptRoot\logs"
+        LogDir = $default_log_dir
 
         excel_sheetnames = @{
             security_groups = "SecurityGroups"
@@ -70,11 +72,11 @@ $logger.Info("Loading Config from '$ConfigPath'...")
 try { [Hashtable]$config = Get-Config @get_config_params }
 catch {
     [String]$err = Format-Error -Message "Error Loading Config from $ConfigPath" -Cause $_.Exception.Message
-    $logger.Error($err); $logger.Save($log_filename); exit 666
+    $logger.Error($err); $logger.Save($LogPath); exit 666
 }
 
 # Ensure LogDir exists
-[String]$LogPath = "$($config.LogDir)\$log_filename"
+$LogPath = "$($config.LogDir)\$log_filename"
 New-Item -ItemType Directory -Path $config.LogDir -Force | Out-Null
 $logger.Debug("Log-Output has been set to '$LogPath'")
 
