@@ -82,7 +82,7 @@ $logger.Debug("Log-Output has been set to '$LogPath'")
 
 # Load Env Vars
 [String]$env_file = $config.EnvFile
-if ($null -ne (Get-Item -Path $env_file)) {
+if (Test-Path -Path $env_file) {
     $logger.Debug("Loading environment variables from '$env_file'")
     Get-Content -Path $env_file | ForEach-Object {
         if ($_ -match '^\s*(#.*)?$') { return }
