@@ -204,17 +204,17 @@ These differences are noted where applicable.
 
 ### 🔥 Firewall Rules
 
-| Field            | Required                      | JSON Field        | Format                                          | Notes                                  |
-| ---------------- | ----------------------------- | ----------------- | ----------------------------------------------- | -------------------------------------- |
-| **CIS ID**       | ✅ Always Required            | `cis_id`          | String of 4-8 digits                            | ID of associated CIS-request; One only |
-| **Index**        | ✅ Always Required            | `index`           | Numeric                                         | Differentiates rules per CIS ID        |
-| **Sources**      | ✅ Required for Create/Update | `sources`         | Alphanumeric / `any`                            | Multiple allowed                       |
-| **Destinations** | ✅ Required for Create/Update | `destinations`    | Same as Sources                                 | Multiple allowed                       |
-| **Services**     | ✅ Required for Create/Update | `services`        | Same as Sources                                 | Refers to defined/default Services     |
-| **Comment**      | ❌ Optional                   | `comment`         | Any string                                      | One only                               |
-| **Request ID**   | ❌ Optional                   | `request_id`      | Same as other types                             | One only                               |
-| **Update IDs**   | ❌ Optional                   | `update_requests` | Same format                                     | Multiple allowed                       |
-| **Gateway**      | ❌ Optional                   | `gateway`         | One or both of: `"T0 Internet"`, `"T1 Payload"` | Defaults to `T1 Payload`               |
+| Field            | Required                      | JSON Field        | Format                                          | Notes                                                |
+| ---------------- | ----------------------------- | ----------------- | ----------------------------------------------- | ---------------------------------------------------- |
+| **CIS ID**       | ✅ Always Required            | `cis_id`          | String of 4-8 digits                            | ID of associated CIS-request; One only               |
+| **Index**        | ✅ Always Required            | `index`           | Numeric                                         | Differentiates rules per CIS ID                      |
+| **Sources**      | ✅ Required for Create/Update | `sources`         | Alphanumeric / `any`                            | Refers to defined Security Groups; Multiple allowed  |
+| **Destinations** | ✅ Required for Create/Update | `destinations`    | Alphanumeric / `any`                            | Refers to defined Security Groups; Multiple allowed  |
+| **Services**     | ✅ Required for Create/Update | `services`        | Alphanumeric / `any`                            | Refers to defined/default Services; Multiple allowed |
+| **Comment**      | ❌ Optional                   | `comment`         | Any string                                      | One only                                             |
+| **Request ID**   | ❌ Optional                   | `request_id`      | Same as other types                             | One only                                             |
+| **Update IDs**   | ❌ Optional                   | `update_requests` | Same format                                     | Multiple allowed                                     |
+| **Gateway**      | ❌ Optional                   | `gateway`         | One or both of: `"T0 Internet"`, `"T1 Payload"` | Defaults to `T1 Payload`                             |
 
 > ⚠️ In Excel input, **Gateways** are selected using **two separate boolean-style fields**:
 > `T0 Internet` and `T1 Payload`. If both are selected (non-empty), Rule is deployed for both.
@@ -381,11 +381,6 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 }
 ```
 
-### ✅ Worksheet Requirements
-- Column order matters - **header names don’t**.
-- Last column in each sheet is **reserved for output**.
-- Rows with non-empty output field are **skipped**.
-
 ### 🔍 Input Behavior Differences
 | Feature            | JSON                   | Excel                            |
 | ------------------ | ---------------------- | -------------------------------- |
@@ -394,8 +389,8 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 
 ### 🧾 Worksheet Guidelines
 - **Column headers** must be present, but their names **don’t need to match exactly**. Only the **column order** matters.
-- **Extra columns are allowed**, but ignored (unless one is the output column).
 - The **last column** is reserved for output. If its cell for a row is non-empty, that row will be **skipped entirely**.
+- **Extra columns after the output column are allowed**, but ignored.
 - Values for fields that support **multiple entries** (e.g. IPs, Ports, Request IDs) should be separated by **line breaks** (`Alt + Enter`).
 
 ### 🛡️ SecurityGroups Worksheet
