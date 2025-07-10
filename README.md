@@ -49,14 +49,14 @@ The script relies on a [configuration file](#️-configuration) and a few [envir
 - `-InlineJson`: Provide input via an inline JSON string
   - See the [JSON Input section](#-json-input--inlinejson) for details
 - `-ExcelFilePath`: Provide input via an Excel workbook
-  - see the [Excel Input section](#-excel-input--excelfilepath) for details
+  - See the [Excel Input section](#-excel-input--excelfilepath) for details
 - `-Tenant`: Specify the tenant to deploy on
   - Required when using `-ExcelFilePath`
   - Optional when using `-InlineJson`, but changes how input is parsed:
     - If set, the JSON input must contain top-level resource keys only (no tenant nesting)
     - If not set, the input must contain one or more tenant blocks as top-level keys
 - `-Action`: Specify the deployment action
-  - Use `create`, `update` and `delete` to explicitly control behaviour
+  - Use `create`, `update`, and `delete` to explicitly control behaviour
   - Use `auto` to automatically create new resources and update existing ones
 - `-RequestId`: Inject a request ID to be used for all resources
   - Fills out empty `request_id` fields or is added to `update_requests`
@@ -214,7 +214,7 @@ These differences are noted where applicable.
 | **Comment**      | ❌ Optional                   | `comment`         | Any string                                      | One only                               |
 | **Request ID**   | ❌ Optional                   | `request_id`      | Same as other types                             | One only                               |
 | **Update IDs**   | ❌ Optional                   | `update_requests` | Same format                                     | Multiple allowed                       |
-| **Gateway**      | ❌ Optional                   | `gateway`         | One or both of: `"T0 Internet"`, `"T1 Payload"` | See notes below                        |
+| **Gateway**      | ❌ Optional                   | `gateway`         | One or both of: `"T0 Internet"`, `"T1 Payload"` | Defaults to `T1 Payload`               |
 
 > ⚠️ In Excel input, **Gateways** are selected using **two separate boolean-style fields**:
 > `T0 Internet` and `T1 Payload`. If both are selected (non-empty), Rule is deployed for both.
