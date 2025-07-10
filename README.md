@@ -6,32 +6,85 @@ It supports both JSON-based and Excel-based input formats, and automates convers
 
 The tool pre-parses values that require special formatting, performs preemptive integrity checks, and logs detailed error messages to catch mistakes before deployment.
 
-> **Note**: Due to VRA API limitations, bulk operations are not supported. All resources are deployed sequentially, which may increase execution time.
+> ⏱️ Due to VRA API limitations, bulk operations are not supported. All resources are deployed sequentially, which may increase execution time.
 
 ## 📦 Quick Start
 
 ### Minimal execution with JSON input:
 
-```powershell
-.\rule_deployer -InlineJson '<Json String>' -Action '[auto|create|update|delete]'
+```
+.\rule_deployer -InlineJson <JSON String> -Action { auto | create | update | delete }
 ```
 
 ### Minimal execution with Excel input:
 
-```powershell
-.\rule_deployer -ExcelFilePath '<Path to Excel>' -Tenant '<Tenant>' -Action '[auto|create|update|delete]'
 ```
+.\rule_deployer -ExcelFilePath <Path to Excel workbook> -Tenant <Tenant name> -Action { auto | create | update | delete }
+```
+
+### Example Executions
+
+<TODO/>
 
 ---
 
 ## 🧪 Usage
 
-<TODO>Full Synopsis</TODO>
+Rule Deployer is launched by executing the `rule_deployer.ps1` script from a PowerShell command line.
 
-### Optional Parameters:
+Input can be provided either as an inline JSON string or via a path to an Excel workbook.
 
-- `-VRAHostName`: Override default VRA host
-- `-RequestID`: Inject a request ID to be used for all resources (or added as an update ID)
+The script relies on a [configuration file](#️-configuration) and a few [environment variables](#environment-variables).
+
+### Synopsis
+
+```
+.\rule_deployer { -InlineJson <JSON string> [ -Tenant <Tenant name> ] | -ExcelFilePath <Path to Excel> -Tenant <Tenant name> } -Action { auto | create | update | delete }
+  [ -RequestId <Request ID> ] [ -ConfigPath <Path to config file> ] [ -EnvFile <Path to Env file> ] [ -LogDir <Path to log output directory> ]
+  [ -NsxImagePath <Path to NSX Image file> ] [ -VraHostName <Name of VRA host> ] [ -NsxHostDomain <Domain of NSX host> ]
+```
+
+### CLI Parameters:
+
+- `-InlineJson`: Provide input via an inline JSON string
+  - See the [JSON Input section](#-json-input--inlinejson) for details
+- `-ExcelFilePath`: Provide input via an Excel workbook
+  - see the [Excel Input section](#-excel-input--excelfilepath) for details
+- `-Tenant`: Specify the tenant to deploy on
+  - Required when using `-ExcelFilePath`
+  - Optional when using `-InlineJson`, but changes how input is parsed:
+    - If set, the JSON input must contain top-level resource keys only (no tenant nesting)
+    - If not set, the input must contain one or more tenant blocks as top-level keys
+- `-Action`: Specify the deployment action
+  - Use `create`, `update` and `delete` to explicitly control behaviour
+  - Use `auto` to automatically create new resources and update existing ones
+- `-RequestId`: Inject a request ID to be used for all resources
+  - Fills out empty `request_id` fields or is added to `update_requests`
+- `-ConfigPath` : Set where the config file is located
+- `-EnvFile` : Override the configured path to the environment file
+- `-NsxImagePath`: Override the path to the NSX Image file
+- `-LogDir` : Override the configured path to the log output directory
+- `-NsxHostDomain`: Override the configured domain of the NSX host
+- `-VRAHostName`: Override the configured VRA host name
+  - **Must be set** either here or in the config file
+
+| Parameter        | Required      | Can also be set in config | Default Value                 |
+| ---------------- | ------------- | ------------------------- | ----------------------------- |
+| `-InlineJson`    | ✅ Required*  | ❌ Only via CLI           | -                             |
+| `-ExcelFilePath` | ✅ Required*  | ❌ Only via CLI           | -                             |
+| `-Tenant`        | ✅ Required** | ❌ Only via CLI           | -                             |
+| `-Action`        | ✅ Required   | ❌ Only via CLI           | -                             |
+| `-RequestId`     | ❌ Optional   | ❌ Only via CLI           | -                             |
+| `-ConfigPath`    | ❌ Optional   | ✅ Can be set in config   | `<ScriptRoot>\config.json`    |
+| `-EnvFile`       | ❌ Optional   | ✅ Can be set in config   | `<ScriptRoot>\.env`           |
+| `-NsxImagePath`  | ❌ Optional   | ✅ Can be set in config   | `<ScriptRoot>\nsx_image.json` |
+| `-LogDir`        | ❌ Optional   | ✅ Can be set in config   | `<ScriptRoot>\logs\`          |
+| `-NsxHostDomain` | ❌ Optional   | ✅ Can be set in config   | -                             |
+| `-VraHostName`   | ✅ Required   | ✅ Can be set in config   | -                             |
+
+> ✅*: One of either `-InlineJson` or `-ExcelFilePath` is required for input
+
+> ✅**: `-Tenant` is required for `-ExcelFilePath` and slightly changes the behaviour of `-InlineJson`
 
 ---
 
@@ -53,8 +106,8 @@ especially useful in automated pipelines or when using the tool repeatedly in th
   "NsxImagePath": "path/to/nsx_image",      // Default: <ScriptRoot>/nsx_image.json
   "LogDir": "path/to/log_output_directory", // Default: <ScriptRoot>/logs/
 
-  "VraHostName": "name-of-vra-host",       // No Default, Required
-  "NsxHostDomain": "https://nsx.host.url", // No Default, Optional
+  "NsxHostDomain": "https://nsx.host.url", // No Default; Optional
+  "VraHostName": "name-of-vra-host",       // No Default; Required
 
   "excel_sheetnames": {
     "security_groups": "SecurityGroups-SheetName", // Default: SecurityGroups
@@ -63,15 +116,15 @@ especially useful in automated pipelines or when using the tool repeatedly in th
   },
 
   "catalog_ids": {
-    "security_groups": "SecurityGroups-VRA-Catalog-ID", // No Default, Required
-    "services": "Services-VRA-Catalog-ID",              // No Default, Required
-    "rules": "FirewallRules-VRA-Catalog-ID"             // No Default, Required
+    "security_groups": "SecurityGroups-VRA-Catalog-ID", // No Default; Required
+    "services": "Services-VRA-Catalog-ID",              // No Default; Required
+    "rules": "FirewallRules-VRA-Catalog-ID"             // No Default; Required
   }
 }
 ```
 
 > 📌 `NsxHostDomain` is entirely optional, but strongly recommended, if accessing the underlying NSX-infrastructure is a possibility.
-> Providing this together with NSX-specific environment variables greatly improves the reliability of resource integrity checks.
+> Providing this together with NSX-specific environment variables greatly improves the reliability of resource integrity checks and `-Action auto`.
 
 ---
 
@@ -103,15 +156,15 @@ nsx_user="{nsx-username}"
 nsx_password="{nsx-password}"
 ```
 
-> 📌 Providing these together with the `NsxHostDomain` config-value greatly improves the reliability of resource integrity checks.
+> 📌 Providing these together with the `NsxHostDomain` config-value greatly improves the reliability of resource integrity checks and `-Action auto`.
 
 ---
 
 ## 📥 Input Overview
 
 Rule Deployer supports two input formats:
-- **🔵 JSON input** via the `-InlineJson` parameter.
-- **🟢 Excel input** via the `-ExcelFilePath` parameter.
+- **📘 JSON input** via the `-InlineJson` parameter.
+- **📗 Excel input** via the `-ExcelFilePath` parameter.
 
 Despite different formats, the same resource types and value structures apply:
 - Security Groups
@@ -172,7 +225,7 @@ These differences are noted where applicable.
 
 ---
 
-## 🔵 JSON Input (`-InlineJson`)
+## 📘 JSON Input (`-InlineJson`)
 
 Use the `-InlineJson` parameter to pass a JSON string defining your resources.
 The JSON input supports two structurally equivalent styles: **flat** and **nested**.
@@ -299,7 +352,7 @@ Each group is an **object of objects**, using names or IDs as keys.
 
 ---
 
-## 🟢 Excel Input (`-ExcelFilePath`)
+## 📗 Excel Input (`-ExcelFilePath`)
 
 Use the `-ExcelFilePath` parameter to specify an Excel file with one or more worksheets:
 
