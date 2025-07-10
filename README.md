@@ -22,9 +22,25 @@ The tool pre-parses values that require special formatting, performs preemptive 
 .\rule_deployer -ExcelFilePath <Path to Excel workbook> -Tenant <Tenant name> -Action { auto | create | update | delete }
 ```
 
-### Example Executions
+### 📋 Example Executions
 
-<TODO/>
+- #### 📘 Create resources from a JSON file
+
+```powershell
+.\rule_deployer -InlineJson (Get-Content '.\fw-rules.json' -Raw) -Action create
+```
+
+- #### 📗 Create or update resources from an Excel workbook
+
+```powershell
+.\rule_deployer -ExcelFilePath '.\FW-Rules.xlsx' -Tenant t001 -Action auto
+```
+
+- #### 🗑️ Delete a specific service
+
+```powershell
+.\rule_deployer -InlineJson '{"t001": {"services": [{"name": "unused-service"}]}}' -Action delete
+```
 
 ---
 
@@ -62,7 +78,7 @@ The script relies on a [configuration file](#️-configuration) and a few [envir
   - Fills out empty `request_id` fields or is added to `update_requests`
 - `-ConfigPath` : Set where the config file is located
 - `-EnvFile` : Override the configured path to the environment file
-- `-NsxImagePath`: Override the path to the NSX Image file
+- `-NsxImagePath`: Override the path to the [NSX Image file](#️-nsx-image)
 - `-LogDir` : Override the configured path to the log output directory
 - `-NsxHostDomain`: Override the configured domain of the NSX host
 - `-VRAHostName`: Override the configured VRA host name
@@ -464,3 +480,25 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 | ----- | --------------------------------------- | --------------- | ------------------ | ------------------------- | ------------------------------ | ------ | ----------- | ---------- | ------ |
 | 2     | ip\_Cust-Clients                        | any             | any                | A short description       | SCTASK0001245                  | 123456 |             | x          |        |
 | 3     | ip\_Cust-Clients<br>ip\_CBA-servers-all | net-ABC-prod    | x1\_GHI<br>x1\_JKL | Another short description | SCTASK0001245<br>SCTASK0001246 | 123456 | x           | x          |        |
+
+---
+
+## 🗂️ NSX-Image
+
+The **NSX-Image** is a structured JSON file automatically maintained by the tool.
+
+It includes all resources ever created or updated with the tool (excluding deletions), along with rich metadata:
+
+- Full configuration of each resource
+- Timestamps for creation and last update
+
+It serves several key purposes:
+
+- 📚 **Local documentation** of the current state
+- 🔐 **Integrity checks**
+  - Used as a fallback when `NsxHostDomain` or NSX-related environment variables are unset
+- 🚀 **Auto mode deployments**
+  - Used as a fallback when `NsxHostDomain` or NSX-related environment variables are unset
+  - May trigger multiple request attempts if the image is outdated, which can increase runtime
+
+This file is referenced implicitly during various operations but is not intended for manual editing.
