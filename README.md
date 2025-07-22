@@ -11,6 +11,20 @@ The tool pre-parses values that require special formatting, performs preemptive 
 
 > ⏱️ Due to VRA API limitations, bulk operations are not supported. All resources are deployed sequentially, which may increase execution time.
 
+## 📖 Table of Contents
+- [📦 Quick Start](#-quick-start)
+- [🧪 Usage](#-usage)
+- [⚙️ Configuration](#️-configuration)
+- [🗝️ Environment Variables](#️-environment-variables)
+- [📥 Input Overview](#-input-overview)
+- [🧾 Input Schema Reference](#-input-schema-reference)
+- [📘 JSON Input](#-json-input--inlinejson)
+- [📗 Excel Input](#-excel-input--excelfilepath)
+- [🗂️ NSX-Image](#️-nsx-image)
+- [🎯 Exit Code Reference](#-exit-code-reference)
+
+---
+
 ## 📦 Quick Start
 
 ### Basic usage with JSON input:
@@ -53,7 +67,14 @@ Rule Deployer is launched by executing the `rule_deployer.ps1` script from a Pow
 
 Input can be provided either as an inline JSON string or via a path to an Excel workbook.
 
-The script relies on a [configuration file](#️-configuration) and a few [environment variables](#environment-variables).
+The script relies on a [configuration file](#️-configuration) and a few [environment variables](#-environment-variables).
+
+💡 These values must be provided at a minimum for execution:
+- The action to perform (`-Action`)
+- One input source (`-InlineJson` or `-ExcelFilePath` + `-Tenant`)
+- The VRA host (`-VraHostName` via CLI or [config](#️-configuration))
+- VRA Catalog IDs of the resources (via [config](#️-configuration))
+- Credentials for CatalogDB, CMDB and RMDB (via [environment variables](#️-environment-variables))
 
 ### Synopsis
 
@@ -71,11 +92,11 @@ The script relies on a [configuration file](#️-configuration) and a few [envir
   - See the [Excel Input section](#-excel-input--excelfilepath) for details
 - `-Tenant`: Specify the tenant to deploy on
   - Required when using `-ExcelFilePath`
-  - Optional when using `-InlineJson`, but changes how input is parsed:
+  - Optional when using `-InlineJson`, but affects how input is parsed:
     - If set, the JSON input must contain top-level resource keys only (no tenant nesting)
     - If not set, the input must contain one or more tenant blocks as top-level keys
 - `-Action`: Specify the deployment action
-  - Use `create`, `update`, and `delete` to explicitly control behaviour
+  - Use `create`, `update`, and `delete` to explicitly control behavior
   - Use `auto` to automatically create new resources and update existing ones
 - `-RequestId`: Inject a request ID to be used for all resources
   - Fills out empty `request_id` fields or is added to `update_requests`
@@ -103,7 +124,7 @@ The script relies on a [configuration file](#️-configuration) and a few [envir
 
 > ✅*: One of either `-InlineJson` or `-ExcelFilePath` is required for input
 
-> ✅**: `-Tenant` is required for `-ExcelFilePath` and slightly changes the behaviour of `-InlineJson`
+> ✅**: `-Tenant` is required for `-ExcelFilePath` and slightly changes the behavior of `-InlineJson`
 
 ---
 
@@ -147,7 +168,7 @@ especially useful in automated pipelines or when using the tool repeatedly in th
 
 ---
 
-## Environment Variables
+## 🗝️ Environment Variables
 
 Rule Deployer depends on a few environment variables for various credentials.
 
@@ -401,10 +422,10 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 ```
 
 ### 🔍 Input Behavior Differences
-| Feature            | JSON                   | Excel                              |
-| ------------------ | ---------------------- | ---------------------------------- |
-| Gateways (Rules)   | `gateway: [...]` field | Separate boolean-style columns     |
-| Multi-value fields | Arrays (`[]`)          | Line-break separated (`Alt+Enter`) |
+| Feature            | JSON                   | Excel                                  |
+| ------------------ | ---------------------- | -------------------------------------- |
+| Gateways (Rules)   | `gateway: [...]` field | Separate boolean-style columns         |
+| Multi-value fields | Arrays (`[]`)          | Line-break separated (use `Alt+Enter`) |
 
 ### 🧾 Worksheet Guidelines
 - **Column headers** must be present, but their names **don’t need to match exactly**. Only the **column order** matters.
