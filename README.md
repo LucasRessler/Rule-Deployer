@@ -13,6 +13,7 @@ The tool pre-parses values that require special formatting, performs preemptive 
 
 ## 📖 Table of Contents
 - [📦 Quick Start](#-quick-start)
+- [🔧 Prerequisites](#-prerequisites)
 - [🧪 Usage](#-usage)
 - [⚙️ Configuration](#️-configuration)
 - [🗝️ Environment Variables](#️-environment-variables)
@@ -58,6 +59,30 @@ The tool pre-parses values that require special formatting, performs preemptive 
   ```powershell
   .\rule_deployer -InlineJson '{"t001": {"services": [{"name": "unused-service"}]}}' -Action delete
   ```
+
+---
+
+## 🔧 Prerequisites
+
+To use Rule Deployer successfully, ensure the following are in place:
+- ✅ PowerShell 5.1+ (Windows) or PowerShell Core 7+ (cross-platform)
+- ✅ The [`ImportExcel`](https://www.powershellgallery.com/packages/ImportExcel) PowerShell module for Excel input
+- ✅ Access to NSX and VRA APIs from your machine
+- ✅ A valid configuration file (`config.json`) or CLI overrides
+- ✅ Required credentials set via environment variables or a `.env` file
+- ✅ (Optional) Excel installed, if editing `.xlsx` files manually
+
+> 💡 **Need to enable script execution?**  
+> Open PowerShell **as Administrator** and run:
+> ```powershell
+> Set-ExecutionPolicy Unrestricted
+> ```
+
+> 💡 **Need Excel input support?**  
+> Install the `ImportExcel` module by running:
+> ```powershell
+> Install-Module ImportExcel -Scope CurrentUser
+> ```
 
 ---
 
