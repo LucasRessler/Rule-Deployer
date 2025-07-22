@@ -232,9 +232,9 @@ Rule Deployer supports two input formats:
 - **📗 Excel input** via the `-ExcelFilePath` parameter.
 
 Despite different formats, the same resource types and value structures apply:
-- Security Groups
-- Services
-- Firewall Rules
+- 🔐 Security Groups
+- ⚙ Services
+- 🔥 Firewall Rules
 
 Some fields behave differently depending on input format (notably Gateway selection for Rules).  
 These differences are noted where applicable.
@@ -264,7 +264,7 @@ These differences are noted where applicable.
 | **Request ID** | ❌ Optional                   | `request_id`      | `SCTASK1234567`, `INC1234567`, etc.               | One value only                            |
 | **Update IDs** | ❌ Optional                   | `update_requests` | Same format as Request ID                         | Multiple allowed                          |
 
-> 🔸 ICMP is not supported. Use predefined NSX ICMP Services (e.g. "ICMP ALL", "ICMP Echo Request").
+> ⚠️ ICMP is not supported. Use predefined NSX ICMP Services (e.g. "ICMP ALL", "ICMP Echo Request").
 
 
 ### 🔥 Firewall Rules
@@ -419,7 +419,7 @@ Each group is an **object of objects**, using names or IDs as keys.
 | **Flat**   | Arrays of resources      | Simpler for hand-written JSON    |
 | **Nested** | Objects keyed by name/ID | Useful for deterministic mapping |
 
-> ✨ Both formats are functionally identical. Choose based on what’s easier for your generator or pipeline.
+> 💡 Both formats are functionally identical. Choose based on what’s easier for your generator or pipeline.
 
 ---
 
