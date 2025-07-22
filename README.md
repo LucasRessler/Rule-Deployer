@@ -508,7 +508,7 @@ This file is referenced implicitly during various operations but is not intended
 
 ---
 
-## Exit Code Reference
+## 🎯 Exit Code Reference
 
 | Code | Meaning                                                                        |
 | ---- | ------------------------------------------------------------------------------ |
