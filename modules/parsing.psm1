@@ -98,7 +98,7 @@ function ParseIntermediate {
             if ($format[$key]["regex"]) { $format[$key]["regex"] }
             else { ".*" }
         $value = ` # If generator is specified, use it to create the value
-            if ($generator) { & $generator -data $data_packet.data }
+            if ($generator) { & $generator $data_packet.data }
             else { $data_packet.data[$key] }
 
         if (-not $value) {
