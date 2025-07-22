@@ -122,4 +122,4 @@ try {
     exit $ret
 }
 catch { $logger.Error($_.Exception.Message); $ret = 5 }
-finally { $logger.Debug("End of Log"); $logger.Save($LogPath); exit $ret }
+finally { $logger.Debug("Exited with code $ret"); $logger.Save($LogPath); exit $ret }
