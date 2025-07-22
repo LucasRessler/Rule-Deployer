@@ -232,7 +232,7 @@ Rule Deployer supports two input formats:
 - **📗 Excel input** via the `-ExcelFilePath` parameter.
 
 Despite different formats, the same resource types and value structures apply:
-- 🔐 Security Groups
+- 🛡️ Security Groups
 - ⚙ Services
 - 🔥 Firewall Rules
 
@@ -243,7 +243,7 @@ These differences are noted where applicable.
 
 ## 🧾 Input Schema Reference
 
-### 🔐 Security Groups
+### 🛡️ Security Groups
 
 | Field            | Required                      | JSON Field        | Format                                    | Notes                      |
 | ---------------- | ----------------------------- | ----------------- | ----------------------------------------- | -------------------------- |
