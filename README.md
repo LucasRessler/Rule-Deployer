@@ -6,6 +6,9 @@ It supports both JSON-based and Excel-based input formats, and automates convers
 
 The tool pre-parses values that require special formatting, performs preemptive integrity checks, and logs detailed error messages to catch mistakes before deployment.
 
+> 💡 Requests for Security Groups, Services and Firewall Rules can be deployed in a single execution, even if the resources depend on each other.
+> Rule Deployer ensures that Rules are handled **last** when **creating or updating**, and **first** when **deleting**.
+
 > ⏱️ Due to VRA API limitations, bulk operations are not supported. All resources are deployed sequentially, which may increase execution time.
 
 ## 📦 Quick Start
@@ -222,7 +225,7 @@ These differences are noted where applicable.
 
 | Field            | Required                      | JSON Field        | Format                                          | Notes                                                |
 | ---------------- | ----------------------------- | ----------------- | ----------------------------------------------- | ---------------------------------------------------- |
-| **CIS ID**       | ✅ Always Required            | `cis_id`          | String of 4-8 digits                            | ID of associated CIS-request; One only               |
+| **CIS ID**       | ✅ Always Required            | `cis_id`          | String of 4-8 digits                            | ID of associated CIS-request; One value only         |
 | **Index**        | ✅ Always Required            | `index`           | Numeric                                         | Differentiates rules per CIS ID                      |
 | **Sources**      | ✅ Required for Create/Update | `sources`         | Alphanumeric / `any`                            | Refers to defined Security Groups; Multiple allowed  |
 | **Destinations** | ✅ Required for Create/Update | `destinations`    | Alphanumeric / `any`                            | Refers to defined Security Groups; Multiple allowed  |
@@ -230,7 +233,7 @@ These differences are noted where applicable.
 | **Comment**      | ❌ Optional                   | `comment`         | Any string                                      | One value only                                       |
 | **Request ID**   | ❌ Optional                   | `request_id`      | Same as other types                             | One value only                                       |
 | **Update IDs**   | ❌ Optional                   | `update_requests` | Same format                                     | Multiple allowed                                     |
-| **Gateway**      | ❌ Optional                   | `gateway`         | One or both of: `"T0 Internet"`, `"T1 Payload"` | Defaults to `T1 Payload`                             |
+| **Gateway**      | ❌ Optional                   | `gateway`         | One or both of: `"T0 Internet"`, `"T1 Payload"` | Defaults to `T1 Payload`; See notes below            |
 
 > ⚠️ In Excel input, **Gateways** are selected using **two separate boolean-style fields**:
 > `T0 Internet` and `T1 Payload`. If both are selected (non-empty), Rule is deployed for both.
@@ -405,9 +408,9 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 
 ### 🧾 Worksheet Guidelines
 - **Column headers** must be present, but their names **don’t need to match exactly**. Only the **column order** matters.
+- Values for fields that support **multiple entries** (e.g. IPs, Ports, Request IDs) should be separated by **line breaks** (`Alt + Enter`).
 - The **last column** is reserved for output. If its cell for a row is non-empty, that row will be **skipped entirely**.
 - **Extra columns after the output column are allowed**, but ignored.
-- Values for fields that support **multiple entries** (e.g. IPs, Ports, Request IDs) should be separated by **line breaks** (`Alt + Enter`).
 
 ### 🛡️ SecurityGroups Worksheet
 
