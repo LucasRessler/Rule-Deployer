@@ -62,6 +62,11 @@ class Logger {
     }
 
     [Void] Save ([String]$path) {
-        $this.GetLogs() -join "`r`n" | Set-Content -Path $path
+        [String]$logstr = $this.GetLogs() -join "`r`n"
+        try { $logstr = Set-Content -Path $path -ErrorAction Stop }
+        catch {
+            $this.Error("Can't save logs, dumping to console instead")
+            Write-Host $logstr
+        }
     }
 }
