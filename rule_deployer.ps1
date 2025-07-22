@@ -80,7 +80,7 @@ $logger.Info("Loading Config from '$ConfigPath'...")
 try { [Hashtable]$config = Get-Config @get_config_params }
 catch {
     [String]$err = Format-Error -Message "Error Loading Config from $ConfigPath" -Cause $_.Exception.Message
-    $logger.Error($err); $logger.Save($LogPath); exit 666
+    $logger.Error($err); $logger.Save($LogPath); exit 4
 }
 
 # Ensure LogDir exists
@@ -104,7 +104,7 @@ if (Test-Path -Path $env_file) {
 }
 
 # Call Controller Function
-[Int]$ret = 0
+[Int]$ret = 5 # Returned on interrupt
 [Hashtable]$controller_params = @{
     base_config = $config
     tenant = $Tenant 
@@ -121,5 +121,5 @@ try {
     Write-Host "Done!"
     exit $ret
 }
-catch { $logger.Error($_.Exception.Message); $ret = 666 }
+catch { $logger.Error($_.Exception.Message); $ret = 6 }
 finally { $logger.Debug("End of Log"); $logger.Save($LogPath); exit $ret }
