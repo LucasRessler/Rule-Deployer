@@ -7,7 +7,7 @@ class NsxApiHandle {
     [Hashtable]$cache = @{}
 
     NsxApiHandle ([String]$base_url) {
-        [String]$missing_vals = @()
+        [String[]]$missing_vals = @()
         if (-not $base_url)         { $missing_vals += "NSX Host Domain was not provided" }
         if (-not $env:nsx_user)     { $missing_vals += Format-Error -Message "NSX Username was not provided" -Hints "Set the nsx_user environment variable" }
         if (-not $env:nsx_password) { $missing_vals += Format-Error -Message "NSX Password was not provided" -Hints "Set the nsx_password environment variable" }
