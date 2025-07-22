@@ -505,3 +505,16 @@ It serves several key purposes:
   - May trigger multiple request attempts if the image is outdated, which can increase runtime
 
 This file is referenced implicitly during various operations but is not intended for manual editing.
+
+---
+
+## Exit Code Reference
+
+| Code | Meaning                                                                        |
+| ---- | ------------------------------------------------------------------------------ |
+| 0    | Successfully deployed all specified resources                                  |
+| 1    | One or more resources caused parse errors                                      |
+| 2    | One or more resources failed to deploy                                         |
+| 3    | Encountered both parse errors and failed deployments                           |
+| 4    | Controller was interrupted while processing resources (eg. keyboard interrupt) |
+| 5    | Encountered a fatal error                                                      |
