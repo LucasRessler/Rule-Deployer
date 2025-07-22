@@ -185,7 +185,7 @@ function Get-RulesConfig ([Hashtable]$config) {
             }
             cis_id = @{
                 dbg_name = "CIS ID"
-                regex = "\d+"
+                regex = "\d{4,8}"
                 required_for_delete = $true
             }
             update_requests = @{
