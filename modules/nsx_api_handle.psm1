@@ -7,11 +7,9 @@ class NsxApiHandle {
     [Hashtable]$cache = @{}
 
     NsxApiHandle ([String]$base_url) {
-        [String[]]$missing_vals = @()
-        if (-not $base_url)         { $missing_vals += "NSX Host Domain was not provided" }
-        if (-not $env:nsx_user)     { $missing_vals += Format-Error -Message "NSX Username was not provided" -Hints "Set the nsx_user environment variable" }
-        if (-not $env:nsx_password) { $missing_vals += Format-Error -Message "NSX Password was not provided" -Hints "Set the nsx_password environment variable" }
-        if ($missing_vals.Count)    { throw Format-Error -Message "Some required values were not provided" -Hints $missing_vals }
+        Assert-EnvVars -dbg @("NSX Username", "NSX Password"   ) `
+                       -var @("nsx_user",     "nsx_password"   ) `
+                       -val @($env:nsx_user,  $env:nsx_password)
         $this.headers = Get-BasicAuthHeader -user $env:nsx_user -pswd $env:nsx_password
         $this.base_url = $base_url
     }
