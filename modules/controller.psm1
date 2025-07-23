@@ -123,7 +123,11 @@ function StartController {
     [NsxApiHandle]$nsx_api_handle = $null
     if ($config.nsx_host_domain) {
         try { $nsx_api_handle = [NsxApiHandle]::New($config.nsx_host_domain) }
-        catch { $logger.Error((Format-Error -Message "Error Instanciating NSX-API-Handle" -Cause $_.Exception.Message)) }
+        catch {
+            $logger.Error((Format-Error -Message "Error Instanciating NSX-API-Handle" -Cause $_.Exception.Message))
+            $logger.Warn("Instead of the NSX-API, I will use the NSX-Image to diagnose integrity issues")
+            $nsx_api_handle = $null
+        }
     }
 
     # Create JSON or Excel IO Handle
@@ -174,18 +178,24 @@ function StartController {
         # Deploy parsed packets for the whole resource group
         PrintDivider
         [DeployBucket[]]$deploy_buckets = @()
+        $to_deploy = @($to_deploy | Where-Object { $_ })
         if ($use_smart_actions -and $nsx_api_handle) {
             # If we have NSX Api access, we definitively know which action to take
             $logger.Info("Checking for existing Resources via NSX API...")
             $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Create))
             $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Update))
-            foreach ($data_packet in $to_deploy | Where-Object { $_ }) {
+            foreach ($data_packet in $to_deploy) {
                 try { [Bool]$resource_exists = $nsx_api_handle.ResourceExists($data_packet) }
-                catch { $logger.Error((Format-Error -Message "NSX Get-Request unsuccessful" -Cause $_.Exception.Message)); break }
+                catch {
+                    $logger.Error((Format-Error -Message "NSX Get-Request unsuccessful" -Cause $_.Exception.Message))
+                    $logger.Warn("I will use the NSX-Image for automatic request choices and to diagnose integrity issues")
+                    $deploy_buckets = @(); $nsx_api_handle = $null; break
+                }
                 if ($resource_exists) { $deploy_buckets[1].to_deploy += $data_packet }
                 else { $deploy_buckets[0].to_deploy += $data_packet }
             }
-        } elseif ($use_smart_actions) {
+        }
+        if ($use_smart_actions -and $null -eq $nsx_api_handle) {
             # Without the Api, we can still make a guess based on the Nsx Image
             $logger.Info("Comparing Resources with NSX Image...")
             $deploy_buckets += [DeployBucket]::New(@([ApiAction]::Create, [ApiAction]::Update))
@@ -195,7 +205,8 @@ function StartController {
                 if ($img_exists) { $deploy_buckets[1].to_deploy += $data_packet }
                 else { $deploy_buckets[0].to_deploy += $data_packet }
             }
-        } else { $deploy_buckets += [DeployBucket]::New($actions, $to_deploy) }
+        }
+        if (-not $use_smart_actions) { $deploy_buckets += [DeployBucket]::New($actions, $to_deploy) }
         # Duplicate the first action of each bucket for extra deploy chances
         foreach ($bucket in $deploy_buckets) {
             [ApiAction[]]$generous_actions = @($bucket.actions[0]) * $generous_factor + @($bucket.actions)
@@ -206,19 +217,26 @@ function StartController {
             # Catches issues like missing dependencies, dangling references, etc.
             $logger.section = "Validate"
             $logger.Info("Validating Integrity of Resources...")
-            foreach ($bucket in $deploy_buckets) {
-                $bucket.to_deploy = $bucket.to_deploy | ForEachWithPercentage {
-                    param ([DataPacket]$unvalidated_packet)
-                    [String[]]$faults = ValidateWithNsxApi $nsx_api_handle $unvalidated_packet $bucket.actions
-                    if ($faults.Count) {
-                        [String]$message = Format-Error -Message "Integrity error at $($unvalidated_packet.origin_info)" -Hints $faults
-                        [String]$short_info = "$actions_info Not Possible"
-                        [OutputValue]$val = [OutputValue]::New($message, $short_info, $unvalidated_packet.row_index)
-                        $io_handle.UpdateOutput($unvalidated_packet.resource_config, $val)
-                        $logger.Error($message)
-                    } else { $unvalidated_packet.validated = $true; $unvalidated_packet }
-                } | Where-Object { $_ }
+            try {
+                foreach ($bucket in $deploy_buckets) {
+                    $bucket.to_deploy = $bucket.to_deploy | ForEachWithPercentage {
+                        param ([DataPacket]$unvalidated_packet)
+                        [String[]]$faults = ValidateWithNsxApi $nsx_api_handle $unvalidated_packet $bucket.actions
+                        if ($faults.Count) {
+                            [String]$message = Format-Error -Message "Integrity error at $($unvalidated_packet.origin_info)" -Hints $faults
+                            [String]$short_info = "$actions_info Not Possible"
+                            [OutputValue]$val = [OutputValue]::New($message, $short_info, $unvalidated_packet.row_index)
+                            $io_handle.UpdateOutput($unvalidated_packet.resource_config, $val)
+                            $logger.Error($message)
+                        } else { $unvalidated_packet.validated = $true; $unvalidated_packet }
+                    } | Where-Object { $_ }
+                }
+            } catch {
+                $logger.Error((Format-Error -Message "Failed to Validate Integrity of Resources" -Cause $_.Exception.Message))
+                $logger.Warn("Instead of the NSX-API, I will use the NSX-Image to diagnose integrity issues")
+                $nsx_api_handle = $null
             }
+            
         }
         
         [Hashtable]$deploy_params = @{
