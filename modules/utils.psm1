@@ -172,6 +172,20 @@ function CustomConvertToJson {
     }
 }
 
+function Assert-EnvVars {
+    param([String[]]$dbg, [String[]]$var, [String[]]$val)
+    [String[]]$missing_vals = @()
+    for ($i = 0; $i -lt $val.Count; $i++) {
+        if (!$val[$i]) { $missing_vals += Format-Error -Message "$($dbg[$i]) was not provided" -Hints "Set the $($var[$i]) environment variable" }
+    };  if ($missing_vals.Count) { throw Format-Error -Message "Some required values were not provided" -Hints $missing_vals }
+}
+
+function HintAtUnauthorized {
+    param ($exception, [String]$portal_name)
+    [String[]]$hints = if ($exception.Response.StatusCode -eq 401) { @("Make sure your $portal_name credentials are valid") } else { @() }
+    return Format-Error -Message $exception.Message -Hints $hints
+}
+
 function Get-BasicAuthHeader {
     param([String]$user, [String]$pswd)
     $bytes = [System.Text.Encoding]::ASCII.GetBytes("${user}:${pswd}")
