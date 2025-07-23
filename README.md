@@ -6,7 +6,7 @@ It supports both JSON-based and Excel-based input formats, and automates convers
 
 The tool pre-parses values that require special formatting, performs preemptive integrity checks, and logs detailed error messages to catch mistakes before deployment.
 
-> 💡 Requests for Security Groups, Services and Firewall Rules can be deployed in a single execution, even if the resources depend on each other.
+> 📌 You can deploy requests for Security Groups, Services and Firewall in a single execution, even if the resources depend on each other.
 > Rule Deployer ensures that Rules are handled **last** when **creating or updating**, and **first** when **deleting**.
 
 > ⏱️ Due to VRA API limitations, bulk operations are not supported. All resources are deployed sequentially, which may increase execution time.
@@ -75,7 +75,7 @@ To use Rule Deployer successfully, ensure the following are in place:
 > 💡 **Need to enable script execution?**  
 > Open PowerShell **as Administrator** and run:
 > ```powershell
-> Set-ExecutionPolicy Unrestricted
+> Set-ExecutionPolicy RemoteSigned
 > ```
 
 > 💡 **Need Excel input support?**  
@@ -94,12 +94,12 @@ Input can be provided either as an inline JSON string or via a path to an Excel 
 
 The script relies on a [configuration file](#️-configuration) and a few [environment variables](#-environment-variables).
 
-💡 These values must be provided at a minimum for execution:
-- The action to perform (`-Action`)
-- One input source (`-InlineJson` or `-ExcelFilePath` + `-Tenant`)
-- The VRA host (`-VraHostName` via CLI or [config](#️-configuration))
-- VRA Catalog IDs of the resources (via [config](#️-configuration))
-- Credentials for CatalogDB, CMDB and RMDB (via [environment variables](#️-environment-variables))
+> 💡 These values must be provided at a minimum for execution:
+> - The action to perform (`-Action`)
+> - One input source (`-InlineJson` or `-ExcelFilePath` + `-Tenant`)
+> - The VRA host (`-VraHostName` via CLI or [config](#️-configuration))
+> - VRA Catalog IDs of the resources (via [config](#️-configuration))
+> - Credentials for CatalogDB, CMDB and RMDB (via [environment variables](#️-environment-variables))
 
 ### Synopsis
 
@@ -125,7 +125,7 @@ The script relies on a [configuration file](#️-configuration) and a few [envir
   - Use `auto` to automatically create new resources and update existing ones
 - `-RequestId`: Inject a request ID to be used for all resources
   - Fills out empty `request_id` fields or is added to `update_requests`
-- `-ConfigPath` : Set where the config file is located
+- `-ConfigPath` : Specify the path to the configuration file
 - `-EnvFile` : Override the configured path to the environment file
 - `-NsxImagePath`: Override the path to the [NSX Image file](#️-nsx-image)
 - `-LogDir` : Override the configured path to the log output directory
@@ -160,7 +160,7 @@ Rule Deployer can be configured with a `config.json` file.
 This file provides a centralized way to manage default values, paths, and catalog configuration -
 especially useful in automated pipelines or when using the tool repeatedly in the same environment.
 
-> 💡 Many of these values can also be set directly with CLI input-parameters.
+> 📌 Many of these values can also be set directly with CLI input-parameters.
 > In this case, the CLI-arguments take priority over the configured values.
 
 ### Configuration File Format:
@@ -233,15 +233,24 @@ Rule Deployer supports two input formats:
 
 Despite different formats, the same resource types and value structures apply:
 - 🛡️ Security Groups
-- ⚙ Services
+- ⚙️ Services
 - 🔥 Firewall Rules
 
-Some fields behave differently depending on input format (notably Gateway selection for Rules).  
-These differences are noted where applicable.
+Some fields behave differently depending on input format:
+
+| Feature            | 📘 JSON                            | 📗 Excel                               |
+| ------------------ | ---------------------------------- | -------------------------------------- |
+| Multi-value fields | Arrays (`[]`)                      | Line-break separated (use `Alt+Enter`) |
+| Gateways (Rules)   | `gateway: [...]` field             | Separate boolean-style columns         |
+| Request IDs        | `request_id` and `update_requests` | A single column for all Request IDs    |
+
+These differences are explained in more detail where applicable.
 
 ---
 
 ## 🧾 Input Schema Reference
+
+This section defines the fields and formats used in both JSON and Excel inputs for each resource type.
 
 ### 🛡️ Security Groups
 
@@ -281,15 +290,15 @@ These differences are noted where applicable.
 | **Update IDs**   | ❌ Optional                   | `update_requests` | Same format                                     | Multiple allowed                                     |
 | **Gateway**      | ❌ Optional                   | `gateway`         | One or both of: `"T0 Internet"`, `"T1 Payload"` | Defaults to `T1 Payload`; See notes below            |
 
-> ⚠️ In Excel input, **Gateways** are selected using **two separate boolean-style fields**:
+> 💡 In Excel input, **Gateways** are selected using **two separate boolean-style fields**:
 > `T0 Internet` and `T1 Payload`. If both are selected (non-empty), Rule is deployed for both.
 
-> 🚪 If no **Gateway** is specified, `T1 Payload` is chosen by default.
+> 📌 If no **Gateway** is specified, `T1 Payload` is chosen by default.
 
-> 🧠 A rule’s identity is defined by its **Tenant + Gateway + CIS ID + Index**.
+> 🧩 Rule names are automatically generated as `IDC<CIS-ID>_<Index>` (e.g. `IDC12345_1`).
+
+> 🧩 A rule’s identity is defined by its **Tenant + Gateway + CIS ID + Index**.
 > Multiple rules may share CIS ID and Index as long as one of these differs.
-
-> 🗯️ Rule names are automatically generated as `IDC<CIS-ID>_<Index>` (eg. `IDC12345_1`).
 
 ---
 
@@ -297,6 +306,7 @@ These differences are noted where applicable.
 
 Use the `-InlineJson` parameter to pass a JSON string defining your resources.
 The JSON input supports two structurally equivalent styles: **flat** and **nested**.
+The fields behave as outlined in the [schema reference above](#-input-schema-reference).
 
 > 💡 You can define multiple tenants within a single JSON string.
 > Alternatively, if you're using the `-Tenant` parameter, omit tenant names and provide top-level resource keys instead.
@@ -419,7 +429,7 @@ Each group is an **object of objects**, using names or IDs as keys.
 | **Flat**   | Arrays of resources      | Simpler for hand-written JSON    |
 | **Nested** | Objects keyed by name/ID | Useful for deterministic mapping |
 
-> 💡 Both formats are functionally identical. Choose based on what’s easier for your generator or pipeline.
+> 💡 Both JSON formats are functionally identical. Choose based on what’s easier for your generator or pipeline.
 
 ---
 
@@ -431,49 +441,49 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 - `Services`
 - `Rules`
 
+> ⚠️ For each Excel worksheet, **column order is critical** even if header names differ.  
+> If a column is missing or misordered, parsing may fail or produce incorrect deployments.  
+> Make sure the worksheets are structured as described in the following sections.
+
 > ⚠️ If a required worksheet is missing, an error will be logged - but processing will continue with any remaining valid sheets.
 
-> The worksheet names can be customized via the config file (`excel_sheetnames`).
-
-```jsonc
-// Example config override
-{
-  "excel_sheetnames": {
-    "security_groups": "MySecuritySheet",
-    "services": "SvcSheet",
-    "rules": "FirewallRules"
-  }
-}
-```
-
-### 🔍 Input Behavior Differences
-| Feature            | JSON                   | Excel                                  |
-| ------------------ | ---------------------- | -------------------------------------- |
-| Gateways (Rules)   | `gateway: [...]` field | Separate boolean-style columns         |
-| Multi-value fields | Arrays (`[]`)          | Line-break separated (use `Alt+Enter`) |
+> 💡 The worksheet names can be customized via the config file (`excel_sheetnames`).
+> ```jsonc
+> // Example config override
+> {
+>   "excel_sheetnames": {
+>     "security_groups": "MySecuritySheet",
+>     "services": "SvcSheet",
+>     "rules": "FirewallRules"
+>   }
+> }
+> ```
 
 ### 🧾 Worksheet Guidelines
 - **Column headers** must be present, but their names **don’t need to match exactly**. Only the **column order** matters.
-- Values for fields that support **multiple entries** (e.g. IPs, Ports, Request IDs) should be separated by **line breaks** (`Alt + Enter`).
+- Values for fields that support **multiple entries** (e.g. IPs, Ports, Request IDs) should be separated by **line breaks** (use `Alt + Enter`).
 - The **last column** is reserved for output. If its cell for a row is non-empty, that row will be **skipped entirely**.
 - **Extra columns after the output column are allowed**, but ignored.
+- Unless stated otherwise, the fields behave as outlined in the [schema reference above](#-input-schema-reference).
+
 
 ### 🛡️ SecurityGroups Worksheet
 
 #### Required Columns (in order):
-1. **Security Group Name**
+1. **Name**
 2. **IP-Addresses**
 3. Hostname
-4. Security Group Comment
-5. Request ID
+4. Comment
+5. Request IDs
 6. Output (must be last)
 
 #### Notes:
-- The **`IP-Addresses`** and **`Request ID`** fields can have multiple entries - enter each on a new line.
+- `IP-Addresses`, `Hostname` and `Request IDs` support multiple values - use line breaks (`Alt + Enter`) for separation.
 - The **first Request ID** is used as the creation request; others are stored as update references.
 
 #### Example Layout:
-| Security Group Name | IP-Addresses                  | Hostname   | Security Group Comment    | Request ID                     | Output |
+
+| Name                | IP-Addresses                  | Hostname   | Comment                   | Request IDs                    | Output |
 | ------------------- | ----------------------------- | ---------- | ------------------------- | ------------------------------ | ------ |
 | ip\_Cust-Clients    | 10.250.10.2/24                | hstabc0123 | Comment can be any string | SCTASK0001234                  |        |
 | ip\_CBA-servers-all | 10.250.10.3<br>10.250.10.1/24 | hstxyz43   | Another comment           | SCTASK0001234<br>SCTASK0001235 |        |
@@ -482,33 +492,34 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 ### ⚙️ Services Worksheet
 
 #### Required Columns (in order):
-1. **Service Name**
+1. **Name**
 2. **Ports**
-3. Service Comment
-4. Request ID
+3. Comment
+4. Request IDs
 5. Output
 
 #### Notes:
-- Multiple **Ports** can be specified using line breaks.
-- Valid formats: `tcp:80`, `udp:100-200`
-- As with other resources, **multiple Request IDs** are supported (first = create, rest = update).
+- Valid formats for `Ports`: `tcp:80`, `udp:100-200`
+- `Ports` and `Request IDs` support multiple values - use line breaks (`Alt + Enter`) for separation.
+- The **first Request ID** is used as the creation request; others are stored as update references.
 
 #### Example Layout:
-| Service Name | Ports                             | Service Comment | Request ID                     | Output |
-| ------------ | --------------------------------- | --------------- | ------------------------------ | ------ |
-| x1\_GHI      | udp:100-140                       | Comment here    | SCTASK0001235                  |        |
-| x1\_JKL      | udp:100<br>tcp:200-210<br>tcp:220 | Another comment | SCTASK0001236<br>SCTASK0001235 |        |
+
+| Name    | Ports                             | Comment         | Request IDs                    | Output |
+| ------- | --------------------------------- | --------------- | ------------------------------ | ------ |
+| x1\_GHI | udp:100-140                       | Comment here    | SCTASK0001235                  |        |
+| x1\_JKL | udp:100<br>tcp:200-210<br>tcp:220 | Another comment | SCTASK0001236<br>SCTASK0001235 |        |
 
 
 ### 🔥 Rules Worksheet
 
 #### Required Columns (in order):
 1. **Index**
-2. **NSX-Source**
-3. **NSX-Destination**
-4. **NSX-Service**
-5. NSX-Description
-6. Request ID
+2. **Sources**
+3. **Destinations**
+4. **Services**
+5. Comment
+6. Request IDs
 7. CIS ID
 8. T0 Internet
 9. T1 Payload
@@ -520,15 +531,42 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
   - If either contains any non-empty value (e.g. `x`), that gateway is selected.
   - If both are filled, the rule is deployed for **both gateways**.
   - If neither is filled, `T1 Payload` is used by default.
-- Multi-value fields (`NSX-Source`, `Destination`, `Service`, `Request ID`) use line breaks for separation.
+- `Sources`, `Destinations`, `Services` and `Request IDs` support multiple values - use line breaks (`Alt + Enter`) for separation.
+- The **first Request ID** is used as the creation request; others are stored as update references.
 - Rule uniqueness is determined by **CIS ID + Index + Gateway**.
 
 #### Example Layout:
 
-| Index | NSX-Source                              | NSX-Destination | NSX-Service        | NSX-Description           | Request ID                     | CIS ID | T0 Internet | T1 Payload | Output |
-| ----- | --------------------------------------- | --------------- | ------------------ | ------------------------- | ------------------------------ | ------ | ----------- | ---------- | ------ |
-| 2     | ip\_Cust-Clients                        | any             | any                | A short description       | SCTASK0001245                  | 123456 |             | x          |        |
-| 3     | ip\_Cust-Clients<br>ip\_CBA-servers-all | net-ABC-prod    | x1\_GHI<br>x1\_JKL | Another short description | SCTASK0001245<br>SCTASK0001246 | 123456 | x           | x          |        |
+| Index | Sources                                 | Destinations | Services           | Comment                   | Request IDs                    | CIS ID | T0 Internet | T1 Payload | Output |
+| ----- | --------------------------------------- | ------------ | ------------------ | ------------------------- | ------------------------------ | ------ | ----------- | ---------- | ------ |
+| 2     | ip\_Cust-Clients                        | any          | any                | A short description       | SCTASK0001245                  | 123456 |             | x          |        |
+| 3     | ip\_Cust-Clients<br>ip\_CBA-servers-all | net-ABC-prod | x1\_GHI<br>x1\_JKL | Another short description | SCTASK0001245<br>SCTASK0001246 | 123456 | x           | x          |        |
+
+
+### 📝 Reading the Output Column
+
+The **Output** column is automatically filled by the tool to reflect the result of processing each row.
+Additionally, Rule Deployer applies **conditional formatting** to the cell.
+**Green** indicates success, while **Red** signals an error.
+
+Possible messages include:
+
+| Output Example               | Meaning                                                                                             |
+| ---------------------------- | --------------------------------------------------------------------------------------------------- |
+| `Create Successful`          | The resource was successfully created                                                               |
+| `Delete Successful`          | The resource was successfully removed                                                               |
+| `Create/Update Not Possible` | There is an issue with the integrity of the resource. (e.g. dependencies on non-existent resources) |
+| `Delete Failed`              | A delete request was deployed but rejected by VRA                                                   |
+| `Invalid <Input Field>`      | A specific _input field_ did not meet the required format                                           |
+| `Missing <Input Field>`      | A required _input field_ was found to be empty                                                      |
+| `Multiple Faults`            | Multiple issues were detected when parsing the input row                                            |
+
+> ⚠️ If the Output field is **non-empty**, that row will be **skipped on the next run**, unless the field is cleared manually.
+
+> 💡 The output `<Action> Failed` can occur when:
+> - Accessing the NSX API was not possible and Rule Deployer was forced to fall back to the [NSX-Image](#️-nsx-image),
+>   which leads to less reliable integrity checks and might not catch issues before deployment.
+> - VRA encountered a resource conflict during deployment. This is rare - simply retrying usually resolves it.
 
 ---
 
@@ -545,9 +583,9 @@ It serves several key purposes:
 
 - 📚 **Local documentation** of the current state
 - 🔐 **Integrity checks**
-  - Used as a fallback when `NsxHostDomain` or NSX-related environment variables are unset
+  - Used as a fallback mechanism when `NsxHostDomain` or NSX-related environment variables are unset
 - 🚀 **Auto mode deployments**
-  - Used as a fallback when `NsxHostDomain` or NSX-related environment variables are unset
+  - Used as a fallback mechanism when `NsxHostDomain` or NSX-related environment variables are unset
   - May trigger multiple request attempts if the image is outdated, which can increase runtime
 
 This file is referenced implicitly during various operations but is not intended for manual editing.
@@ -556,11 +594,11 @@ This file is referenced implicitly during various operations but is not intended
 
 ## 🎯 Exit Code Reference
 
-| Code | Meaning                                                                        |
-| ---- | ------------------------------------------------------------------------------ |
-| 0    | Successfully deployed all specified resources                                  |
-| 1    | One or more resources caused parse errors                                      |
-| 2    | One or more parsed resources were not deployed successfully                    |
-| 3    | Encountered both parse errors and failed deployments                           |
-| 4    | Controller was interrupted while processing resources (eg. keyboard interrupt) |
-| 5    | Encountered a fatal error                                                      |
+| Code | Meaning                                                                         |
+| ---- | ------------------------------------------------------------------------------- |
+| 0    | Successfully deployed all specified resources                                   |
+| 1    | One or more resources failed to parse (invalid structure or missing fields)     |
+| 2    | One or more parsed resources were not deployed successfully                     |
+| 3    | Encountered both parse errors and failed deployments                            |
+| 4    | Controller was interrupted while processing resources (e.g. keyboard interrupt) |
+| 5    | Encountered a fatal error                                                       |
