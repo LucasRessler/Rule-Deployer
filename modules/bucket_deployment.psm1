@@ -133,7 +133,7 @@ function AwaitSingleBucket {
     }
 
     [Int]$num_successful = $num_deployed - $bucket.to_deploy.Count
-    $logger.Info("$num_successful/$num_deployed ${action_verb}d sucessfully$(Punctuate $num_successful $num_deployed)")
+    $logger.Info("$num_successful/$num_deployed ${action_verb}d successfully$(Punctuate $num_successful $num_deployed)")
     return $bucket.to_deploy.Count
 }
 
