@@ -1,5 +1,11 @@
 # Rule Deployer
 
+![Cross-platform](https://img.shields.io/badge/OS-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?logo=windows&logoColor=blue)
+![PowerShell 5.1+](https://img.shields.io/badge/PowerShell-5.1%2B-blue?logo=powershell)
+![JSON Input](https://img.shields.io/badge/Input-JSON-blue)
+![Excel Input](https://img.shields.io/badge/Input-Excel-green)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **Rule Deployer** is a PowerShell tool that streamlines the deployment of NSX Security Groups, Services, and Firewall Rules, specific to FCI.
 
 It supports both JSON-based and Excel-based input formats, and automates conversion into the necessary API calls for deployment.
@@ -23,6 +29,7 @@ The tool pre-parses values that require special formatting, performs preemptive 
 - [📗 Excel Input](#-excel-input--excelfilepath)
 - [🗂️ NSX-Image](#️-nsx-image)
 - [🎯 Exit Code Reference](#-exit-code-reference)
+- [🧩 Advanced: Customizing Resource Behavior](#-advanced-customizing-resource-behavior)
 
 ---
 
@@ -596,3 +603,45 @@ This file is referenced implicitly during various operations but is not intended
 | 3    | Encountered both parse errors and failed deployments                            |
 | 4    | Controller was interrupted while processing resources (e.g. keyboard interrupt) |
 | 5    | Encountered a fatal error                                                       |
+
+---
+
+## 🧩 Advanced: Customizing Resource Behavior
+
+Rule Deployer is powered by a declarative resource configuration engine defined in [`modules/resource_configs.ps1`](./modules/resource_configs.ps1).
+This makes it easy to customize how different resource types are parsed, named, validated, and transformed.
+
+### 🔀 Example: Changing Rule Name Format
+
+The rule name generation logic lives in a simple PowerShell script block:
+
+```powershell
+function Get-RulesConfig ([Hashtable]$config) {
+    @{
+        format = @{
+            name = @{
+                generator = {
+                    param([Hashtable]$data)
+                    "IDC$($data.cis_id)_$($data.index)"
+                }
+            }
+        }
+    }
+}
+```
+
+If you want to change the format, all you have to do is edit the `generator` block:
+
+```powershell
+generator = {
+    param($data)
+    Join @($data.request_id, "C$($data.cis_id)", $data.index, "Auto") "-"
+    # Rule names are now generated as `<Request ID>-C<CIS ID>-<Index>-Auto`
+    # `Join` also filters out null values, so without a Request ID it generates `C<CIS ID>-<Index>-Auto`
+    # e.g. `SCTASK12345-C12345-1-Auto`, `C23456-2-Auto`
+}
+```
+
+This approach extends to other areas like default field values, required fields, and validation patterns - all structured under each resource type (`security_groups`, `services`, `rules`).
+
+> 🧩 This file is intended for **power users** looking to adjust Rule Deployer’s behavior without altering the core script logic.
