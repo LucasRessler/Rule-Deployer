@@ -90,7 +90,7 @@ To use Rule Deployer successfully, ensure the following are in place:
 
 Rule Deployer is launched by executing the `rule_deployer.ps1` script from a PowerShell command line.
 
-Input can be provided either as an inline JSON string or via a path to an Excel workbook.
+You can provide input either as an inline JSON string or by specifying a path to an Excel workbook.
 
 The script relies on a [configuration file](#️-configuration) and a few [environment variables](#-environment-variables).
 
@@ -244,7 +244,7 @@ Some fields behave differently depending on input format:
 | Gateways (Rules)   | `gateway: [...]` field             | Separate boolean-style columns         |
 | Request IDs        | `request_id` and `update_requests` | A single column for all Request IDs    |
 
-These differences are explained in more detail where applicable.
+These differences are covered in their respective sections below.
 
 ---
 
@@ -274,7 +274,6 @@ This section defines the fields and formats used in both JSON and Excel inputs f
 | **Update IDs** | ❌ Optional                   | `update_requests` | Same format as Request ID                         | Multiple allowed                          |
 
 > ⚠️ ICMP is not supported. Use predefined NSX ICMP Services (e.g. "ICMP ALL", "ICMP Echo Request").
-
 
 ### 🔥 Firewall Rules
 
@@ -466,7 +465,6 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 - **Extra columns after the output column are allowed**, but ignored.
 - Unless stated otherwise, the fields behave as outlined in the [schema reference above](#-input-schema-reference).
 
-
 ### 🛡️ SecurityGroups Worksheet
 
 #### Required Columns (in order):
@@ -487,7 +485,6 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 | ------------------- | ----------------------------- | ---------- | ------------------------- | ------------------------------ | ------ |
 | ip\_Cust-Clients    | 10.250.10.2/24                | hstabc0123 | Comment can be any string | SCTASK0001234                  |        |
 | ip\_CBA-servers-all | 10.250.10.3<br>10.250.10.1/24 | hstxyz43   | Another comment           | SCTASK0001234<br>SCTASK0001235 |        |
-
 
 ### ⚙️ Services Worksheet
 
@@ -510,7 +507,6 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 | x1\_GHI | udp:100-140                       | Comment here    | SCTASK0001235                  |        |
 | x1\_JKL | udp:100<br>tcp:200-210<br>tcp:220 | Another comment | SCTASK0001236<br>SCTASK0001235 |        |
 
-
 ### 🔥 Rules Worksheet
 
 #### Required Columns (in order):
@@ -526,7 +522,6 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 10. Output
 
 #### Notes:
-
 - Gateway selection is determined by columns **`T0 Internet`** and **`T1 Payload`**:
   - If either contains any non-empty value (e.g. `x`), that gateway is selected.
   - If both are filled, the rule is deployed for **both gateways**.
@@ -541,7 +536,6 @@ Use the `-ExcelFilePath` parameter to specify an Excel file with one or more wor
 | ----- | --------------------------------------- | ------------ | ------------------ | ------------------------- | ------------------------------ | ------ | ----------- | ---------- | ------ |
 | 2     | ip\_Cust-Clients                        | any          | any                | A short description       | SCTASK0001245                  | 123456 |             | x          |        |
 | 3     | ip\_Cust-Clients<br>ip\_CBA-servers-all | net-ABC-prod | x1\_GHI<br>x1\_JKL | Another short description | SCTASK0001245<br>SCTASK0001246 | 123456 | x           | x          |        |
-
 
 ### 📝 Reading the Output Column
 
