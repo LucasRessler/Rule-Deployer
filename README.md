@@ -27,8 +27,8 @@ The tool pre-parses values that require special formatting, performs preemptive 
 - [🧾 Input Schema Reference](#-input-schema-reference)
 - [📘 JSON Input](#-json-input--inlinejson)
 - [📗 Excel Input](#-excel-input--excelfilepath)
-- [🗂️ NSX-Image](#️-nsx-image)
 - [🎯 Exit Code Reference](#-exit-code-reference)
+- [🗂️ NSX-Image](#️-nsx-image)
 - [🧩 Advanced: Customizing Resource Behavior](#-advanced-customizing-resource-behavior)
 
 ---
@@ -571,6 +571,19 @@ Possible messages include:
 
 ---
 
+## 🎯 Exit Code Reference
+
+| Code | Meaning                                                                         |
+| ---- | ------------------------------------------------------------------------------- |
+| 0    | Successfully deployed all specified resources                                   |
+| 1    | One or more resources failed to parse (invalid structure or missing fields)     |
+| 2    | One or more parsed resources were not deployed successfully                     |
+| 3    | Encountered both parse errors and failed deployments                            |
+| 4    | Controller was interrupted while processing resources (e.g. keyboard interrupt) |
+| 5    | Encountered a fatal error                                                       |
+
+---
+
 ## 🗂️ NSX-Image
 
 The **NSX-Image** is a structured JSON file automatically maintained by the tool.
@@ -590,19 +603,6 @@ It serves several key purposes:
   - May trigger multiple request attempts if the image is outdated, which can increase runtime
 
 This file is referenced implicitly during various operations but is not intended for manual editing.
-
----
-
-## 🎯 Exit Code Reference
-
-| Code | Meaning                                                                         |
-| ---- | ------------------------------------------------------------------------------- |
-| 0    | Successfully deployed all specified resources                                   |
-| 1    | One or more resources failed to parse (invalid structure or missing fields)     |
-| 2    | One or more parsed resources were not deployed successfully                     |
-| 3    | Encountered both parse errors and failed deployments                            |
-| 4    | Controller was interrupted while processing resources (e.g. keyboard interrupt) |
-| 5    | Encountered a fatal error                                                       |
 
 ---
 
