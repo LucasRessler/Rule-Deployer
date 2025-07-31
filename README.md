@@ -99,7 +99,7 @@ Rule Deployer is launched by executing the `rule_deployer.ps1` script from a Pow
 
 You can provide input either as an inline JSON string or by specifying a path to an Excel workbook.
 
-The script relies on a [configuration file](#️-configuration) and a few [environment variables](#-environment-variables).
+The script relies on a [configuration file](#️-configuration) and a few [environment variables](#️-environment-variables).
 
 > 💡 These values must be provided at a minimum for execution:
 > - The action to perform (`-Action`)
