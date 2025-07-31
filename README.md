@@ -207,7 +207,7 @@ Rule Deployer depends on a few environment variables for various credentials.
 These can be set either in your shell environment or in a `.env` file located in the root folder.
 The `.env` file will be auto-loaded at runtime.
 
-> 📌 Parsing of the `.env` supports similar syntax to official specifications.
+> 📌 Parsing of the `.env` file supports similar syntax to official specifications.
 > See [below](#-supported-env-syntax) for details.
 
 ### Required Variables
