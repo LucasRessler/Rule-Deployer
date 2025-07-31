@@ -154,7 +154,7 @@ The script relies on a [configuration file](#️-configuration) and a few [envir
 | `-NsxHostDomain` | ❌ Optional   | ✅ Can be set in config   | -                             |
 | `-VraHostName`   | ✅ Required   | ✅ Can be set in config   | -                             |
 
-> ✅*: One of either `-InlineJson` or `-ExcelFilePath` is required for input
+> ✅*: One of `-InlineJson` or `-ExcelFilePath` must be provided for input
 
 > ✅**: `-Tenant` is required for `-ExcelFilePath` and slightly changes the behavior of `-InlineJson`
 
@@ -207,28 +207,39 @@ Rule Deployer depends on a few environment variables for various credentials.
 These can be set either in your shell environment or in a `.env` file located in the root folder.
 The `.env` file will be auto-loaded at runtime.
 
-> ⚠️ Parsing of the `.env` file is simplistic:
-> Everything after the first `=` is taken as the value (including quotes).
+> 📌 Parsing of the `.env` file supports similar syntax to official specifications.
+> See [below](#-supported-env-syntax) for details.
 
-### **Required Variables**
+### Required Variables
 
 ```env
-cmdb_user=NEO\cmdb-username
-cmdb_password=cmdb-password
-catalogdb_user=neo\catalogdb-username
-catalogdb_password=catalogdb-password
-rmdb_user=rmdb-username
-rmdb_password=rmdb-password
+cmdb_user          = 'NEO\cmdb-username'
+cmdb_password      = 'cmdb-password'
+catalogdb_user     = 'neo\catalogdb-username'
+catalogdb_password = 'catalogdb-password'
+rmdb_user          = 'rmdb-username'
+rmdb_password      = 'rmdb-password'
 ```
 
-### **Optional Variables**
+### Optional Variables
 
 ```env
-nsx_user=nsx-username
-nsx_password=nsx-password
+nsx_user     = 'nsx-username'
+nsx_password = 'nsx-password'
 ```
 
 > 📌 Providing these together with the `NsxHostDomain` config-value greatly improves the reliability of resource integrity checks and `-Action auto`.
+
+### ✅ Supported `.env` Syntax
+- Empty lines are skipped
+- Everything after `#` or `;` until the end of the line is treated as a comment
+- `BASIC=basic` becomes `{BASIC: 'basic'}`
+- Whitespace is removed from both ends of unquoted values: `FOO =  some value `        -> `{FOO: 'some value'}`
+- Empty values become empty strings:                       `EMPTY = `                  -> `{EMPTY: ''}`
+- Quotes inside unquoted values are maintained:            `JSON={"foo": "bar"}`       -> `{JSON:'{"foo": "bar"}'}`
+- Single and double quoted values maintain whitespace:     `FOO = "  some value  "`    -> `{FOO: '  some value  '}`
+- Double quoted values support full json escape sequences: `Escaped="new\n\t\"line\""`
+- Single quoted values only support escaping `\'`, everything else is taken as is
 
 ---
 
@@ -586,7 +597,8 @@ Possible messages include:
 
 ## 🗂️ NSX-Image
 
-The **NSX-Image** is a structured JSON file automatically maintained by the tool.
+The **NSX-Image** is a structured JSON file automatically maintained by the tool.  
+It is used as a fallback and integrity-check cache for when live NSX lookups are unavailable.
 
 It includes all resources ever created or updated with the tool (excluding deletions), along with rich metadata:
 

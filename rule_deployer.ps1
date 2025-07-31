@@ -91,16 +91,8 @@ $logger.Debug("Log-Output has been set to '$LogPath'")
 # Load Env Vars
 [String]$env_file = $config.EnvFile
 if (Test-Path -Path $env_file) {
-    $logger.Debug("Loading environment variables from '$env_file'")
-    Get-Content -Path $env_file | ForEach-Object {
-        if ($_ -match '^\s*(#.*)?$') { return }
-        [String[]]$parts = $_ -split '=', 2
-        if ($parts.Count -eq 2) {
-            $name = $parts[0].Trim()
-            $value = $parts[1].Trim()
-            [System.Environment]::SetEnvironmentVariable($name, $value, "Process")
-        }
-    }
+    $logger.Info("Loading Environment Variables from '$env_file'...")
+    ParseAndLoadEnv (Get-Content -Path $env_file -Raw)
 }
 
 # Call Controller Function
