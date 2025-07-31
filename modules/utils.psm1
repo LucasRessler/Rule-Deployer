@@ -95,6 +95,35 @@ function DeepCopy ([Hashtable]$source) {
    $copy
 }
 
+function ParseAndLoadEnv {
+    param ([String]$env_contents)
+
+    [String]$key_regex = '(?<key>[\w.-]+)'
+    [String]$comment_regex = '([#;].*)?'
+    [String]$unquoted_regex = '(?<uVal>[^\r\n#;]*[^#;\s]?)'
+    [String]$doublequoted_regex = '("(?<dVal>(\\.|\n|[^"])*)")'
+    [String]$singlequoted_regex = "('(?<sVal>(\\'|\n|[^'])*)')"
+    [String]$any_value_regex = "($singlequoted_regex|$doublequoted_regex|$unquoted_regex)"
+    [Regex]$dotenv_regex = "(\s*$key_regex\s*=\s*$any_value_regex)?\s*$comment_regex"
+
+    [String[]]$errors = @()
+    Select-String -InputObject $env_contents -Pattern $dotenv_regex -AllMatches | ForEach-Object {
+        $_.Matches | ForEach-Object {
+            [System.Text.RegularExpressions.GroupCollection]$g = $_.Groups
+            if (-not $g["key"].Success) { return }
+            [String]$key = $g["key"].Value
+            [String]$value = switch ($true) {
+                ($g["uVal"].Success) { $g["uVal"].Value }
+                ($g["sVal"].Success) { $g["sVal"].Value -replace "\\'", "'" }
+                ($g["dVal"].Success) {
+                    try { "`"$($g["dVal"].Value.Replace("`n", '\n').Replace("`t", '\t'))`"" | ConvertFrom-Json }
+                    catch { $errors += "Parsing value for variable '$key' failed: $($_.Exception.Message)"; return }
+                }
+            }; [System.Environment]::SetEnvironmentVariable($key, $value)
+        }
+    }; $errors | ForEach-Object { Write-Warning $_ }
+}
+
 function CollapseNested ($nested_obj, [String[]]$keys) {
     if ($keys.Count -gt 0 -and $nested_obj -is [Hashtable]) {
         $result = @()
