@@ -1,4 +1,4 @@
-config.json
-nsx_image.json
+*.json
+*.log
+*.env
 logs
-.env
