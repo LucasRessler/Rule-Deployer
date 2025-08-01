@@ -232,14 +232,15 @@ nsx_password = 'nsx-password'
 
 ### ✅ Supported `.env` Syntax
 - Empty lines are skipped
-- Everything after `#` or `;` until the end of the line is treated as a comment
 - `BASIC=basic` becomes `{BASIC: 'basic'}`
+- `#` or `;` starts a comment until the end of the line:   `K=val # This is a comment` -> `{K: 'val'}`
 - Whitespace is removed from both ends of unquoted values: `FOO =  some value `        -> `{FOO: 'some value'}`
 - Empty values become empty strings:                       `EMPTY = `                  -> `{EMPTY: ''}`
 - Quotes inside unquoted values are maintained:            `JSON={"foo": "bar"}`       -> `{JSON:'{"foo": "bar"}'}`
-- Single and double quoted values maintain whitespace:     `FOO = "  some value  "`    -> `{FOO: '  some value  '}`
+- Single and double quoted values maintain whitespace:     `FOO = "  some value "`    -> `{FOO: '  some value '}`
 - Double quoted values support full json escape sequences: `Escaped="new\n\t\"line\""`
-- Single quoted values only support escaping `\'`, everything else is taken as is
+- Single quoted values only support escaping `\'`,
+  everything else is taken as is.
 
 ---
 
