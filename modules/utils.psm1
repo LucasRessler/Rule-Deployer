@@ -95,21 +95,25 @@ function DeepCopy ([Hashtable]$source) {
    $copy
 }
 
-function ParseAndLoadEnv {
+function ParseEnv {
     param ([String]$env_contents)
 
     [String]$key_regex = '(?<key>[\w.-]+)'
-    [String]$comment_regex = '([#;].*)?'
-    [String]$unquoted_regex = '(?<uVal>[^\r\n#;]*[^#;\s]?)'
+    [String]$comment_regex = '([#;][^\r\n]*)?'
+    [String]$unquoted_regex = '(?<uVal>[^\r\n#;]*[^\s#;])'
     [String]$doublequoted_regex = '("(?<dVal>(\\.|\n|[^"])*)")'
     [String]$singlequoted_regex = "('(?<sVal>(\\'|\n|[^'])*)')"
-    [String]$any_value_regex = "($singlequoted_regex|$doublequoted_regex|$unquoted_regex)"
-    [Regex]$dotenv_regex = "(\s*$key_regex\s*=\s*$any_value_regex)?\s*$comment_regex"
+    [String]$fallback_regex = '([^\S\r\n]*(?<invalid>[^\r\n#;]*[^\s#;]))'
+    [String]$any_value_regex = "($singlequoted_regex|$doublequoted_regex|$unquoted_regex)?"
+    [String]$key_value_regex = "([^\S\r\n]*$key_regex[^\S\r\n]*=[^\S\r\n]*$any_value_regex)"
+    [Regex]$dotenv_regex = "(($key_value_regex|$fallback_regex)?[^\S\r\n]*$comment_regex)([\r\n]+|$)"
 
     [String[]]$errors = @()
+    [Hashtable]$results = @{}
     Select-String -InputObject $env_contents -Pattern $dotenv_regex -AllMatches | ForEach-Object {
         $_.Matches | ForEach-Object {
             [System.Text.RegularExpressions.GroupCollection]$g = $_.Groups
+            if ($g["invalid"].Success) { $errors += "Invalid Env-Syntax: $($g["invalid"].Value)"; return }
             if (-not $g["key"].Success) { return }
             [String]$key = $g["key"].Value
             [String]$value = switch ($true) {
@@ -117,11 +121,13 @@ function ParseAndLoadEnv {
                 ($g["sVal"].Success) { $g["sVal"].Value -replace "\\'", "'" }
                 ($g["dVal"].Success) {
                     try { "`"$($g["dVal"].Value.Replace("`n", '\n').Replace("`t", '\t'))`"" | ConvertFrom-Json }
-                    catch { $errors += "Parsing value for variable '$key' failed: $($_.Exception.Message)"; return }
+                    catch { $errors += "Parsing Value for Env-Variable '$key' failed: $($_.Exception.Message)"; return }
                 }
-            }; [System.Environment]::SetEnvironmentVariable($key, $value)
+            }
+            if ($results.ContainsKey($key)) { $errors += "Duplicate Env-Key: '$key'" }
+            else { $results[$key] = $value }
         }
-    }; $errors | ForEach-Object { Write-Warning $_ }
+    }; return [PSCustomObject]@{ results = $results; errors = $errors }
 }
 
 function CollapseNested ($nested_obj, [String[]]$keys) {

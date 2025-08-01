@@ -92,7 +92,9 @@ $logger.Debug("Log-Output has been set to '$LogPath'")
 [String]$env_file = $config.EnvFile
 if (Test-Path -Path $env_file) {
     $logger.Info("Loading Environment Variables from '$env_file'...")
-    ParseAndLoadEnv (Get-Content -Path $env_file -Raw)
+    [PSCustomObject]$env = ParseEnv (Get-Content -Path $env_file -Raw)
+    foreach ($err in $env.errors) { $logger.Warn($err) }
+    foreach ($k in $env.results.Keys) { [System.Environment]::SetEnvironmentVariable($k, $env.results[$k]) }
 }
 
 # Call Controller Function
