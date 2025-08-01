@@ -33,6 +33,12 @@ param (
 [String]$DEFAULT_SERVICES_SHEETNAME = "Services"
 [String]$DEFAULT_RULES_SHEETNAME = "Rules"
 
+# Initialise Logger
+[Logger]$logger = [Logger]::New($Host.UI)
+[String]$log_filename = "ruledeployer_$(Get-Date -Format "yyyy-MM-dd_HH-mm-ss").log"
+[String]$LogPath = ".\$log_filename"
+$logger.Debug("I was invoked with '$($MyInvocation.Line)'")
+
 # Define Config Structure
 [Hashtable]$get_config_params = @{
     config_path = $ConfigPath
@@ -68,18 +74,12 @@ param (
     }
 }
 
-# Initialise Logger
-[Logger]$logger = [Logger]::New($Host.UI)
-[String]$log_filename = "ruledeployer_$(Get-Date -Format "yyyy-MM-dd_HH-mm-ss").log"
-[String]$LogPath = ".\$log_filename"
-$logger.Debug("I was invoked with '$($MyInvocation.Line)'")
-
 # Load Config
 $logger.section = "Setup"
 $logger.Info("Loading Config from '$ConfigPath'...")
 try { [Hashtable]$config = Get-Config @get_config_params }
 catch {
-    [String]$err = Format-Error -Message "Error Loading Config from $ConfigPath" -Cause $_.Exception.Message
+    [String]$err = Format-Error -Message "Error Loading Config from '$ConfigPath'" -Cause $_.Exception.Message
     $logger.Error($err); $logger.Save($LogPath); exit 5
 }
 
